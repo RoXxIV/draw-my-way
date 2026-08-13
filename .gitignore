@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.vite/
+.env.local
+.strava-session.json
+npm-debug.log*
+vite-dev*.log
+Vos trajets.json
