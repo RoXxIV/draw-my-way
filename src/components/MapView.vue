@@ -33,7 +33,7 @@ const visibleFeatureCollection = computed(() => ({
   type: 'FeatureCollection',
   features: props.activities
     .filter((activity) => activity.visible !== false)
-    .map((activity, index) => ({
+    .map((activity) => ({
       type: 'Feature',
       properties: {
         id: activity.id,
@@ -124,6 +124,7 @@ function syncRoutes() {
     data,
   });
 
+  // All activities are rendered through one GeoJSON source/layer to keep MapLibre responsive.
   map.addLayer({
     id: 'activity-lines',
     type: 'line',
@@ -155,6 +156,7 @@ function applyFootprintMode() {
     'activity-lines',
   ]);
 
+  // The footprint mode hides style layers in-place and keeps the active style background intact.
   for (const layer of map.getStyle().layers || []) {
     if (layer.id.startsWith('activity-lines')) {
       continue;

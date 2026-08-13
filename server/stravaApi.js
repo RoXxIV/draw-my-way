@@ -202,6 +202,7 @@ function getRefreshToken(env, session) {
 async function fetchAllActivities(accessToken) {
   const activities = [];
 
+  // Strava is paginated; the cap protects the local dev server from endless imports.
   for (let page = 1; page <= STRAVA_MAX_PAGES; page += 1) {
     const url = new URL(STRAVA_ACTIVITIES_URL);
     url.searchParams.set('page', String(page));
@@ -345,6 +346,7 @@ function lightenLine(line) {
     return line;
   }
 
+  // Summary polylines are already simplified; this second pass keeps the all-time map light.
   const lightened = line.filter((_, index) => index % STRAVA_SIMPLIFY_EVERY_N_POINTS === 0);
   const lastPoint = line[line.length - 1];
 

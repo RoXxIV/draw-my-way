@@ -5,6 +5,11 @@ import MapView from './components/MapView.vue';
 import { DEFAULT_MAP_STYLE_ID, getValidMapStyleId } from './config/map';
 import { useActivities } from './composables/useActivities';
 
+const ROUTE_COLOR_STORAGE_KEY = 'routeColor';
+const FOOTPRINT_MODE_STORAGE_KEY = 'isFootprintMode';
+const MAP_STYLE_STORAGE_KEY = 'mapStyleId';
+const DEFAULT_ROUTE_COLOR = '#d62828';
+
 const {
   activities,
   clearMessage,
@@ -22,23 +27,23 @@ const {
   refreshStravaStatus,
 } = useActivities();
 
-const routeColor = ref(localStorage.getItem('routeColor') || '#d62828');
-const isFootprintMode = ref(localStorage.getItem('isFootprintMode') === '1');
-const mapStyleId = ref(getValidMapStyleId(localStorage.getItem('mapStyleId') || DEFAULT_MAP_STYLE_ID));
+const routeColor = ref(localStorage.getItem(ROUTE_COLOR_STORAGE_KEY) || DEFAULT_ROUTE_COLOR);
+const isFootprintMode = ref(localStorage.getItem(FOOTPRINT_MODE_STORAGE_KEY) === '1');
+const mapStyleId = ref(getValidMapStyleId(localStorage.getItem(MAP_STYLE_STORAGE_KEY) || DEFAULT_MAP_STYLE_ID));
 
 function updateRouteColor(color) {
   routeColor.value = color;
-  localStorage.setItem('routeColor', color);
+  localStorage.setItem(ROUTE_COLOR_STORAGE_KEY, color);
 }
 
 function toggleFootprintMode() {
   isFootprintMode.value = !isFootprintMode.value;
-  localStorage.setItem('isFootprintMode', isFootprintMode.value ? '1' : '0');
+  localStorage.setItem(FOOTPRINT_MODE_STORAGE_KEY, isFootprintMode.value ? '1' : '0');
 }
 
 function updateMapStyle(styleId) {
   mapStyleId.value = styleId;
-  localStorage.setItem('mapStyleId', styleId);
+  localStorage.setItem(MAP_STYLE_STORAGE_KEY, styleId);
 }
 
 async function resetLocalDataFromUrl() {
@@ -55,6 +60,7 @@ async function resetLocalDataFromUrl() {
 
 async function handleOauthMessage(event) {
   if (event.origin === window.location.origin && event.data?.type === 'strava-oauth-complete') {
+    // The OAuth popup notifies the opener so the user does not need a second import click.
     await refreshStravaStatus();
     await importStravaActivities();
   }

@@ -1,5 +1,6 @@
 import { openDB } from 'idb';
 
+// Keep the original IndexedDB name so existing local TerraTrace imports survive the rename.
 const DB_NAME = 'france-gpx-activities';
 const DB_VERSION = 1;
 const STORE_NAME = 'activities';
@@ -24,27 +25,10 @@ export async function getActivities() {
   });
 }
 
-export async function saveActivity(activity) {
-  const db = await dbPromise;
-  const existing = await db.get(STORE_NAME, activity.id);
-
-  if (existing) {
-    return { saved: false, activity: existing };
-  }
-
-  await db.add(STORE_NAME, activity);
-  return { saved: true, activity };
-}
-
 export async function upsertActivity(activity) {
   const db = await dbPromise;
   await db.put(STORE_NAME, activity);
   return activity;
-}
-
-export async function deleteActivityById(id) {
-  const db = await dbPromise;
-  await db.delete(STORE_NAME, id);
 }
 
 export async function clearActivities() {
