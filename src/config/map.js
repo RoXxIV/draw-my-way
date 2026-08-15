@@ -1,9 +1,9 @@
 export const MAP_STYLES = [
-  { id: 'positron', label: 'Positron', url: 'https://tiles.openfreemap.org/styles/positron' },
-  { id: 'bright', label: 'Bright', url: 'https://tiles.openfreemap.org/styles/bright' },
-  { id: 'dark-matter', label: 'Dark Matter', url: '/styles/dark-matter.json' },
-  { id: 'fiord', label: 'Fiord', url: '/styles/fiord-custom.json' },
-  { id: '3d', label: '3D', url: 'https://tiles.openfreemap.org/styles/liberty', isThreeDimensional: true },
+  { id: 'positron', label: 'Positron', preview: ['#f7f7f4', '#d6dbe0'], url: 'https://tiles.openfreemap.org/styles/positron' },
+  { id: 'bright', label: 'Bright', preview: ['#f1efe9', '#9fc7f2'], url: 'https://tiles.openfreemap.org/styles/bright' },
+  { id: 'dark-matter', label: 'Dark Matter', preview: ['#070909', '#2b3034'], url: '/styles/dark-matter.json' },
+  { id: 'fiord', label: 'Fiord', preview: ['#45516e', '#253347'], url: '/styles/fiord-custom.json' },
+  { id: '3d', label: '3D', preview: ['#ebe6dc', '#6f9f70'], url: 'https://tiles.openfreemap.org/styles/liberty', isThreeDimensional: true },
 ];
 
 export const DEFAULT_MAP_STYLE_ID = 'positron';

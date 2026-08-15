@@ -2,18 +2,40 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import maplibregl from 'maplibre-gl';
 import { bbox } from '@turf/bbox';
+import { CAPTURE_FORMATS, CAPTURE_STATS_POSITIONS } from '../config/capture';
 import { FRANCE_CENTER, FRANCE_ZOOM, getMapStyleUrl, isThreeDimensionalStyle } from '../config/map';
+import { getAllTimeStatsRows } from '../services/activityStats';
 
 const props = defineProps({
   activities: {
     type: Array,
     required: true,
   },
+  captureSettings: {
+    type: Object,
+    required: true,
+  },
+  captureStatsPosition: {
+    type: String,
+    required: true,
+  },
   routeColor: {
     type: String,
     default: '#d62828',
   },
+  routeOpacity: {
+    type: Number,
+    default: 0.95,
+  },
+  routeRenderMode: {
+    type: String,
+    default: 'solid',
+  },
   isFootprintMode: {
+    type: Boolean,
+    default: false,
+  },
+  isCaptureMode: {
     type: Boolean,
     default: false,
   },
@@ -23,11 +45,22 @@ const props = defineProps({
   },
 });
 
+const emit = defineEmits(['update-capture-stats-position']);
 const mapContainer = ref(null);
+const captureFrame = ref(null);
 const mapLoaded = ref(false);
 const isStyleLoading = ref(false);
+const isCapturing = ref(false);
+const snapshotBaseUrl = ref('');
+const snapshotUrl = ref('');
+const snapshotError = ref('');
 let map = null;
 let lastFitFeatureCount = 0;
+let snapshotRenderVersion = 0;
+const ACTIVITY_SOURCE_ID = 'activities';
+const ROUTE_LINE_WIDTH_BY_ZOOM = ['interpolate', ['linear'], ['zoom'], 5, 1, 9, 1.8, 13, 2.5];
+const HEAT_BASE_LINE_WIDTH_BY_ZOOM = ['interpolate', ['linear'], ['zoom'], 5, 2, 9, 3.2, 13, 4.5];
+const HEAT_CORE_LINE_WIDTH_BY_ZOOM = ROUTE_LINE_WIDTH_BY_ZOOM;
 
 const visibleFeatureCollection = computed(() => ({
   type: 'FeatureCollection',
@@ -43,6 +76,19 @@ const visibleFeatureCollection = computed(() => ({
       geometry: activity.geometry,
     })),
 }));
+const captureDownloadName = computed(() => `terratrace-${new Date().toISOString().slice(0, 10)}.png`);
+const captureCustomText = computed(() => props.captureSettings.customText.trim());
+const activeCaptureFormat = computed(() => (
+  CAPTURE_FORMATS.find((format) => format.id === props.captureSettings.format) || CAPTURE_FORMATS[2]
+));
+const capturePreviewRows = computed(() => {
+  if (!props.captureSettings.showStatsBadge) {
+    return [];
+  }
+
+  return (getAllTimeStatsRows(props.activities) || []).filter((row) => props.captureSettings.statRows[row.key]);
+});
+const shouldShowCaptureStatsPreview = computed(() => props.captureSettings.showStatsBadge || Boolean(captureCustomText.value));
 
 onMounted(() => {
   map = new maplibregl.Map({
@@ -51,6 +97,9 @@ onMounted(() => {
     center: FRANCE_CENTER,
     zoom: FRANCE_ZOOM,
     minZoom: getMinimumZoom(),
+    canvasContextAttributes: {
+      preserveDrawingBuffer: true,
+    },
     renderWorldCopies: false,
     attributionControl: true,
   });
@@ -106,35 +155,169 @@ watch(
   },
 );
 
+watch(
+  () => props.routeRenderMode,
+  () => {
+    if (!map || !mapLoaded.value) {
+      return;
+    }
+
+    applyRouteRenderMode();
+  },
+);
+
+watch(
+  () => props.routeColor,
+  () => {
+    if (!map || !mapLoaded.value) {
+      return;
+    }
+
+    syncRoutes();
+  },
+);
+
+watch(
+  () => props.routeOpacity,
+  () => {
+    if (!map || !mapLoaded.value) {
+      return;
+    }
+
+    applyRoutePaint();
+  },
+);
+
+watch(
+  () => props.isCaptureMode,
+  (isEnabled) => {
+    if (!isEnabled) {
+      snapshotBaseUrl.value = '';
+      snapshotUrl.value = '';
+      snapshotError.value = '';
+    }
+  },
+);
+
+watch(
+  [() => props.captureStatsPosition, () => props.captureSettings],
+  () => {
+    if (snapshotBaseUrl.value) {
+      renderSnapshotFromBase();
+    }
+  },
+  { deep: true },
+);
+
 function syncRoutes() {
   if (!map || !mapLoaded.value) {
     return;
   }
 
   const data = visibleFeatureCollection.value;
-  const source = map.getSource('activities');
+  const source = map.getSource(ACTIVITY_SOURCE_ID);
 
   if (source) {
     source.setData(data);
+    ensureRouteLayers();
+    applyRouteRenderMode();
     return;
   }
 
-  map.addSource('activities', {
+  map.addSource(ACTIVITY_SOURCE_ID, {
     type: 'geojson',
     data,
   });
 
   // All activities are rendered through one GeoJSON source/layer to keep MapLibre responsive.
-  map.addLayer({
-    id: 'activity-lines',
-    type: 'line',
-    source: 'activities',
-    paint: {
-      'line-color': ['get', 'color'],
-      'line-width': 3,
-      'line-opacity': 0.95,
-    },
-  });
+  ensureRouteLayers();
+  applyRouteRenderMode();
+  applyRoutePaint();
+}
+
+function ensureRouteLayers() {
+  if (!map.getLayer('activity-lines-heat-base')) {
+    map.addLayer({
+      id: 'activity-lines-heat-base',
+      type: 'line',
+      source: ACTIVITY_SOURCE_ID,
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': '#2b9348',
+        'line-width': HEAT_BASE_LINE_WIDTH_BY_ZOOM,
+        'line-opacity': 0.42,
+        'line-blur': 0.7,
+      },
+    });
+  }
+
+  if (!map.getLayer('activity-lines-heat-core')) {
+    map.addLayer({
+      id: 'activity-lines-heat-core',
+      type: 'line',
+      source: ACTIVITY_SOURCE_ID,
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': '#ff3b00',
+        'line-width': HEAT_CORE_LINE_WIDTH_BY_ZOOM,
+        'line-opacity': 0.16,
+      },
+    });
+  }
+
+  if (!map.getLayer('activity-lines')) {
+    map.addLayer({
+      id: 'activity-lines',
+      type: 'line',
+      source: ACTIVITY_SOURCE_ID,
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-width': ROUTE_LINE_WIDTH_BY_ZOOM,
+        'line-opacity': 0.95,
+      },
+    });
+  }
+}
+
+function applyRouteRenderMode() {
+  const isHeatMode = props.routeRenderMode === 'heat';
+
+  setLayerVisibility('activity-lines', isHeatMode ? 'none' : 'visible');
+  setLayerVisibility('activity-lines-heat-base', isHeatMode ? 'visible' : 'none');
+  setLayerVisibility('activity-lines-heat-core', isHeatMode ? 'visible' : 'none');
+  applyRoutePaint();
+}
+
+function applyRoutePaint() {
+  const opacity = clamp(props.routeOpacity, 0, 1);
+
+  if (map.getLayer('activity-lines')) {
+    map.setPaintProperty('activity-lines', 'line-opacity', opacity);
+  }
+
+  if (map.getLayer('activity-lines-heat-base')) {
+    map.setPaintProperty('activity-lines-heat-base', 'line-opacity', opacity * 0.42);
+  }
+
+  if (map.getLayer('activity-lines-heat-core')) {
+    map.setPaintProperty('activity-lines-heat-core', 'line-opacity', opacity * 0.16);
+  }
+}
+
+function setLayerVisibility(layerId, visibility) {
+  if (map.getLayer(layerId)) {
+    map.setLayoutProperty(layerId, 'visibility', visibility);
+  }
 }
 
 function getMinimumZoom() {
@@ -229,11 +412,300 @@ function fitToRoutesIfNeeded() {
   );
 }
 
+async function captureMapImage() {
+  if (!map || !captureFrame.value) {
+    return;
+  }
+
+  isCapturing.value = true;
+  snapshotError.value = '';
+  snapshotUrl.value = '';
+
+  await waitForMapFrame();
+
+  try {
+    const sourceCanvas = map.getCanvas();
+    const mapRect = sourceCanvas.getBoundingClientRect();
+    const frameRect = captureFrame.value.getBoundingClientRect();
+    const scaleX = sourceCanvas.width / mapRect.width;
+    const scaleY = sourceCanvas.height / mapRect.height;
+    const sourceX = clamp((frameRect.left - mapRect.left) * scaleX, 0, sourceCanvas.width);
+    const sourceY = clamp((frameRect.top - mapRect.top) * scaleY, 0, sourceCanvas.height);
+    const sourceWidth = clamp(frameRect.width * scaleX, 1, sourceCanvas.width - sourceX);
+    const sourceHeight = clamp(frameRect.height * scaleY, 1, sourceCanvas.height - sourceY);
+    const outputCanvas = document.createElement('canvas');
+
+    outputCanvas.width = Math.round(sourceWidth);
+    outputCanvas.height = Math.round(sourceHeight);
+
+    const context = outputCanvas.getContext('2d');
+    context.fillStyle = '#f5f7fa';
+    context.fillRect(0, 0, outputCanvas.width, outputCanvas.height);
+    context.drawImage(
+      sourceCanvas,
+      sourceX,
+      sourceY,
+      sourceWidth,
+      sourceHeight,
+      0,
+      0,
+      outputCanvas.width,
+      outputCanvas.height,
+    );
+    const cssToCanvasScale = outputCanvas.width / frameRect.width;
+
+    snapshotBaseUrl.value = outputCanvas.toDataURL('image/png');
+    await renderSnapshotFromBase(cssToCanvasScale);
+  } catch (error) {
+    snapshotError.value = error.message || 'Capture impossible.';
+  } finally {
+    isCapturing.value = false;
+  }
+}
+
+async function renderSnapshotFromBase(preferredScale) {
+  if (!snapshotBaseUrl.value) {
+    return;
+  }
+
+  const renderVersion = ++snapshotRenderVersion;
+  const image = await loadImage(snapshotBaseUrl.value);
+
+  if (renderVersion !== snapshotRenderVersion) {
+    return;
+  }
+
+  const outputCanvas = document.createElement('canvas');
+  outputCanvas.width = image.naturalWidth;
+  outputCanvas.height = image.naturalHeight;
+
+  const context = outputCanvas.getContext('2d');
+  const frameRect = captureFrame.value?.getBoundingClientRect();
+  const cssToCanvasScale = preferredScale || (frameRect?.width ? outputCanvas.width / frameRect.width : 1);
+
+  context.drawImage(image, 0, 0, outputCanvas.width, outputCanvas.height);
+  drawStatsBadge(context, outputCanvas.width, outputCanvas.height, cssToCanvasScale);
+  snapshotUrl.value = outputCanvas.toDataURL('image/png');
+}
+
+function drawStatsBadge(context, width, height, cssToCanvasScale = 1) {
+  const customText = props.captureSettings.customText.trim();
+
+  if (!props.captureSettings.showStatsBadge && !customText) {
+    return;
+  }
+
+  const rows = props.captureSettings.showStatsBadge
+    ? (getAllTimeStatsRows(props.activities) || []).filter((row) => props.captureSettings.statRows[row.key])
+    : [];
+  const headline = customText || 'Votre carte';
+  const metaRows = rows.slice(0, 2);
+  const isCompactExport = window.matchMedia('(max-width: 760px)').matches;
+  const scale = Math.max(cssToCanvasScale, 1);
+  const availableWidth = Math.max(width - Math.round((isCompactExport ? 24 : 44) * scale), 1);
+  const padding = Math.round((isCompactExport ? 10 : 22) * scale);
+  const panelWidth = Math.min(availableWidth, Math.round((isCompactExport ? 178 : 320) * scale));
+  const brandFontSize = Math.round((isCompactExport ? 12 : 24) * scale);
+  const headlineFontSize = Math.round((isCompactExport ? 10 : 18) * scale);
+  const detailFontSize = Math.round((isCompactExport ? 8 : 13) * scale);
+  const brandLineHeight = Math.round((isCompactExport ? 16 : 34) * scale);
+  const headlineLineHeight = Math.round((isCompactExport ? 14 : 24) * scale);
+  const detailLineHeight = Math.round((isCompactExport ? 13 : 28) * scale);
+  const sectionGap = Math.round((isCompactExport ? 6 : 12) * scale);
+  const metaHeight = props.captureSettings.showStatsBadge ? metaRows.length * detailLineHeight : 0;
+  const panelHeight = Math.min(
+    Math.max(height - padding * 2, 1),
+    padding * 2 + brandLineHeight + headlineLineHeight + metaHeight + sectionGap,
+  );
+  const { x, y } = getStatsBadgePosition(props.captureStatsPosition, width, height, panelWidth, panelHeight, padding);
+
+  context.save();
+  context.shadowColor = 'rgba(15, 23, 42, 0.24)';
+  context.shadowBlur = Math.round((isCompactExport ? 18 : 24) * scale);
+  context.shadowOffsetY = Math.round((isCompactExport ? 7 : 10) * scale);
+  drawRoundRect(context, x, y, panelWidth, panelHeight, Math.round(8 * scale));
+  context.fillStyle = 'rgba(255, 255, 255, 0.84)';
+  context.fill();
+  context.restore();
+
+  let cursorY = y + padding + brandFontSize;
+
+  context.fillStyle = '#17212b';
+  context.font = `800 ${brandFontSize}px Inter, Arial, sans-serif`;
+  context.fillText('TerraTrace', x + padding, cursorY);
+  cursorY += sectionGap + headlineFontSize;
+
+  context.fillStyle = customText ? '#fc4c02' : '#17212b';
+  context.font = `850 ${headlineFontSize}px Inter, Arial, sans-serif`;
+  context.fillText(truncateText(context, headline, panelWidth - padding * 2), x + padding, cursorY);
+  cursorY += detailLineHeight;
+
+  metaRows.forEach((row, index) => {
+    const rowY = cursorY + index * detailLineHeight;
+
+    context.fillStyle = '#344451';
+    context.font = `700 ${detailFontSize}px Inter, Arial, sans-serif`;
+    context.fillText(`${row.value} ${row.label.toLowerCase()}`, x + padding, rowY);
+  });
+}
+
+function truncateText(context, text, maxWidth) {
+  if (context.measureText(text).width <= maxWidth) {
+    return text;
+  }
+
+  let truncated = text;
+
+  while (truncated.length > 0 && context.measureText(`${truncated}...`).width > maxWidth) {
+    truncated = truncated.slice(0, -1);
+  }
+
+  return `${truncated}...`;
+}
+
+function updateCaptureStatsPosition(position) {
+  emit('update-capture-stats-position', position);
+}
+
+function clearSnapshot() {
+  snapshotBaseUrl.value = '';
+  snapshotUrl.value = '';
+  snapshotError.value = '';
+}
+
+function loadImage(source) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Aperçu de capture impossible.'));
+    image.src = source;
+  });
+}
+
+function getStatsBadgePosition(position, width, height, panelWidth, panelHeight, padding) {
+  const horizontal = position.split('-')[1];
+  const vertical = position.split('-')[0];
+  const xByPosition = {
+    left: padding,
+    center: (width - panelWidth) / 2,
+    right: width - panelWidth - padding,
+  };
+  const yByPosition = {
+    top: padding,
+    middle: (height - panelHeight) / 2,
+    bottom: height - panelHeight - padding,
+  };
+
+  return {
+    x: clamp(Math.round(xByPosition[horizontal] ?? padding), padding, Math.max(width - panelWidth - padding, padding)),
+    y: clamp(Math.round(yByPosition[vertical] ?? padding), padding, Math.max(height - panelHeight - padding, padding)),
+  };
+}
+
+function drawRoundRect(context, x, y, width, height, radius) {
+  context.beginPath();
+  context.moveTo(x + radius, y);
+  context.lineTo(x + width - radius, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + radius);
+  context.lineTo(x + width, y + height - radius);
+  context.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  context.lineTo(x + radius, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - radius);
+  context.lineTo(x, y + radius);
+  context.quadraticCurveTo(x, y, x + radius, y);
+  context.closePath();
+}
+
+function waitForMapFrame() {
+  return new Promise((resolve) => {
+    let hasResolved = false;
+
+    const finish = () => {
+      if (hasResolved) {
+        return;
+      }
+
+      hasResolved = true;
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    };
+
+    map.once('render', finish);
+    map.triggerRepaint();
+    setTimeout(finish, 300);
+  });
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
 </script>
 
 <template>
   <section class="map-shell">
     <div ref="mapContainer" class="map-container"></div>
+    <div v-if="isCaptureMode" class="capture-overlay">
+      <div ref="captureFrame" class="capture-frame" :class="`is-${activeCaptureFormat.id}`">
+        <span class="capture-resolution">{{ activeCaptureFormat.resolution }}</span>
+        <img
+          v-if="snapshotUrl"
+          class="capture-preview"
+          :src="snapshotUrl"
+          alt="Aperçu de la capture TerraTrace"
+        />
+        <div
+          v-if="shouldShowCaptureStatsPreview && !snapshotUrl"
+          class="capture-stats-preview"
+          :class="`is-${captureStatsPosition}`"
+          aria-hidden="true"
+        >
+          <p class="capture-stats-brand">TerraTrace</p>
+          <p class="capture-stats-text">{{ captureCustomText || 'Votre carte' }}</p>
+          <p v-if="captureSettings.showStatsBadge && capturePreviewRows.length > 0" class="capture-stats-source">
+            {{ capturePreviewRows.slice(0, 2).map((row) => `${row.value} ${row.label.toLowerCase()}`).join(' · ') }}
+          </p>
+        </div>
+        <div class="capture-placement" role="group" aria-label="Position des statistiques">
+          <div class="capture-placement-grid">
+            <button
+              v-for="position in CAPTURE_STATS_POSITIONS"
+              :key="position.id"
+              class="capture-placement-button"
+              :class="{ 'is-selected': captureStatsPosition === position.id }"
+              type="button"
+              :aria-label="position.label"
+              :aria-pressed="captureStatsPosition === position.id"
+              :title="position.label"
+              @click="updateCaptureStatsPosition(position.id)"
+            ></button>
+          </div>
+          <span class="capture-placement-label">Position stats</span>
+        </div>
+        <div class="capture-actions">
+          <button
+            v-if="!snapshotUrl"
+            class="capture-button"
+            type="button"
+            :disabled="isCapturing"
+            @click="captureMapImage"
+          >
+            {{ isCapturing ? 'Création...' : "Créer l'image" }}
+          </button>
+          <button v-else class="capture-button" type="button" @click="clearSnapshot">
+            Réajuster
+          </button>
+          <a
+            v-if="snapshotUrl"
+            class="capture-download"
+            :href="snapshotUrl"
+            :download="captureDownloadName"
+          >
+            Télécharger l'image
+          </a>
+        </div>
+      </div>
+      <p v-if="snapshotError" class="capture-error">{{ snapshotError }}</p>
+    </div>
     <div v-if="isStyleLoading" class="map-loading" role="status">
       <span class="map-loading-spinner"></span>
       <span>Chargement du fond</span>

@@ -12,6 +12,8 @@ TerraTrace est un prototype Vue 3 qui affiche toutes les traces sportives Strava
 - Preferences visuelles dans `localStorage`.
 - Themes MapLibre dont Fiord et Dark Matter personnalises.
 - Menu responsive avec burger sur mobile.
+- Mode chaleur visuel et reglage d'opacite pour personnaliser les traces.
+- Mode photo avec cadrage libre, stats configurables, texte perso et export PNG.
 
 ## Stack
 
@@ -88,4 +90,3 @@ Un systeme utilisateur deviendra pertinent si l'application ajoute plus tard :
 - plusieurs sources sportives
 - sauvegarde serveur
 - fonctionnalites sociales ou payantes
-
