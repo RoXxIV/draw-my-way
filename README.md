@@ -14,6 +14,8 @@ TerraTrace est un prototype Vue 3 qui affiche toutes les traces sportives Strava
 - Menu responsive avec burger sur mobile.
 - Mode chaleur visuel et reglage d'opacite pour personnaliser les traces.
 - Mode photo avec cadrage libre, stats configurables, texte perso et export PNG.
+- Galerie publique anonyme des cartes partagees.
+- Partage Supabase : une seule image publique par compte Strava, remplacee a chaque nouveau partage.
 
 ## Stack
 
@@ -34,9 +36,40 @@ Creer ensuite un fichier `.env.local` a partir de `.env.local.example` :
 ```bash
 STRAVA_CLIENT_ID=
 STRAVA_CLIENT_SECRET=
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
 ```
 
 Le fichier `.env.local` est ignore par Git.
+
+## Supabase
+
+La galerie publique utilise Supabase cote serveur uniquement. La cle `SUPABASE_SERVICE_ROLE_KEY`
+ne doit jamais etre exposee dans le navigateur.
+
+Dans Supabase SQL Editor, executer :
+
+```sql
+-- voir aussi supabase/schema.sql
+create table if not exists public.shared_maps (
+  id uuid primary key default gen_random_uuid(),
+  strava_athlete_id text not null unique,
+  image_path text not null,
+  image_url text not null,
+  stats jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.shared_maps enable row level security;
+
+insert into storage.buckets (id, name, public)
+values ('shared-maps', 'shared-maps', true)
+on conflict (id) do update set public = true;
+```
+
+La galerie ne renvoie pas `strava_athlete_id` au front. Cet identifiant sert seulement a remplacer
+l'ancienne image du meme sportif.
 
 ## Lancer le projet
 
@@ -67,6 +100,8 @@ Les preferences UI stockees dans `localStorage` sont :
 - couleur des traces
 - theme de carte
 - mode empreinte
+- format photo
+- position des stats photo
 
 La session OAuth Strava locale est stockee cote serveur dans `.strava-session.json`, ignore par Git.
 

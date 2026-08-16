@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "seed:shared-maps": "node scripts/seed-shared-maps.js"
   },
   "dependencies": {
     "@turf/bbox": "^7.2.0",

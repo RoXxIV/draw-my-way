@@ -20,16 +20,6 @@ export function getAllTimeStatsRows(activities) {
   ];
 }
 
-export function getAllTimeStatsSummary(activities) {
-  const rows = getAllTimeStatsRows(activities);
-
-  if (!rows) {
-    return null;
-  }
-
-  return Object.fromEntries(rows.map((row) => [row.key, row]));
-}
-
 function formatDistance(meters) {
   return `${(meters / 1000).toLocaleString('fr-FR', {
     maximumFractionDigits: 1,

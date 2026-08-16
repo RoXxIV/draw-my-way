@@ -5,4 +5,5 @@ dist/
 .strava-session.json
 npm-debug.log*
 vite-dev*.log
+vite-share-test*.log
 Vos trajets.json

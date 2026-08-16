@@ -1,10 +1,12 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import ActivitySidebar from './components/ActivitySidebar.vue';
+import HomeGallery from './components/HomeGallery.vue';
 import MapView from './components/MapView.vue';
 import { CAPTURE_STATS_POSITION_STORAGE_KEY, DEFAULT_CAPTURE_FORMAT, DEFAULT_CAPTURE_STATS_POSITION } from './config/capture';
 import { DEFAULT_MAP_STYLE_ID, getValidMapStyleId } from './config/map';
 import { useActivities } from './composables/useActivities';
+import { fetchSharedMaps } from './services/sharedMaps';
 
 const ROUTE_COLOR_STORAGE_KEY = 'routeColor';
 const ROUTE_RENDER_MODE_STORAGE_KEY = 'routeRenderMode';
@@ -52,6 +54,10 @@ const isCaptureMode = ref(false);
 const mapStyleId = ref(getValidMapStyleId(localStorage.getItem(MAP_STYLE_STORAGE_KEY) || DEFAULT_MAP_STYLE_ID));
 const captureSettings = ref(readCaptureSettings());
 const captureStatsPosition = ref(localStorage.getItem(CAPTURE_STATS_POSITION_STORAGE_KEY) || DEFAULT_CAPTURE_STATS_POSITION);
+const isExplorerOpen = ref(window.location.hash === '#carte');
+const sharedMaps = ref([]);
+const isSharedGalleryLoading = ref(false);
+const sharedGalleryError = ref('');
 
 function updateRouteColor(color) {
   routeColor.value = color;
@@ -90,6 +96,38 @@ function updateCaptureSettings(settings) {
 function updateCaptureStatsPosition(position) {
   captureStatsPosition.value = position;
   localStorage.setItem(CAPTURE_STATS_POSITION_STORAGE_KEY, position);
+}
+
+function openExplorer() {
+  isExplorerOpen.value = true;
+
+  if (window.location.hash !== '#carte') {
+    window.history.pushState({}, '', '#carte');
+  }
+}
+
+function syncViewFromHash() {
+  isExplorerOpen.value = window.location.hash === '#carte';
+}
+
+async function loadSharedMaps() {
+  isSharedGalleryLoading.value = true;
+  sharedGalleryError.value = '';
+
+  try {
+    sharedMaps.value = await fetchSharedMaps();
+  } catch (error) {
+    sharedGalleryError.value = error.message;
+  } finally {
+    isSharedGalleryLoading.value = false;
+  }
+}
+
+function handleSharedMapCreated(sharedMap) {
+  sharedMaps.value = [
+    sharedMap,
+    ...sharedMaps.value.filter((map) => map.id !== sharedMap.id),
+  ];
 }
 
 function readCaptureSettings() {
@@ -141,16 +179,28 @@ async function handleOauthMessage(event) {
 
 onMounted(() => {
   loadActivities().then(resetLocalDataFromUrl);
+  loadSharedMaps();
+  window.addEventListener('hashchange', syncViewFromHash);
   window.addEventListener('message', handleOauthMessage);
 });
 
 onBeforeUnmount(() => {
+  window.removeEventListener('hashchange', syncViewFromHash);
   window.removeEventListener('message', handleOauthMessage);
 });
 </script>
 
 <template>
-  <main class="app-layout" :class="{ 'is-capture-mode': isCaptureMode }">
+  <HomeGallery
+    v-if="!isExplorerOpen"
+    :error="sharedGalleryError"
+    :is-loading="isSharedGalleryLoading"
+    :maps="sharedMaps"
+    @open-app="openExplorer"
+    @refresh="loadSharedMaps"
+  />
+
+  <main v-else class="app-layout" :class="{ 'is-capture-mode': isCaptureMode }">
     <ActivitySidebar
       :activities="activities"
       :capture-settings="captureSettings"
@@ -188,6 +238,7 @@ onBeforeUnmount(() => {
         :route-color="routeColor"
         :route-opacity="routeOpacity"
         :route-render-mode="routeRenderMode"
+        @shared-map-created="handleSharedMapCreated"
         @update-capture-stats-position="updateCaptureStatsPosition"
       />
 

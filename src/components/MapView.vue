@@ -5,6 +5,7 @@ import { bbox } from '@turf/bbox';
 import { CAPTURE_FORMATS, CAPTURE_STATS_POSITIONS } from '../config/capture';
 import { FRANCE_CENTER, FRANCE_ZOOM, getMapStyleUrl, isThreeDimensionalStyle } from '../config/map';
 import { getAllTimeStatsRows } from '../services/activityStats';
+import { shareMapImage } from '../services/sharedMaps';
 
 const props = defineProps({
   activities: {
@@ -45,15 +46,17 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['update-capture-stats-position']);
+const emit = defineEmits(['shared-map-created', 'update-capture-stats-position']);
 const mapContainer = ref(null);
 const captureFrame = ref(null);
 const mapLoaded = ref(false);
 const isStyleLoading = ref(false);
 const isCapturing = ref(false);
+const isSharing = ref(false);
 const snapshotBaseUrl = ref('');
 const snapshotUrl = ref('');
 const snapshotError = ref('');
+const shareMessage = ref('');
 let map = null;
 let lastFitFeatureCount = 0;
 let snapshotRenderVersion = 0;
@@ -195,6 +198,7 @@ watch(
       snapshotBaseUrl.value = '';
       snapshotUrl.value = '';
       snapshotError.value = '';
+      shareMessage.value = '';
     }
   },
 );
@@ -420,6 +424,7 @@ async function captureMapImage() {
   isCapturing.value = true;
   snapshotError.value = '';
   snapshotUrl.value = '';
+  shareMessage.value = '';
 
   await waitForMapFrame();
 
@@ -486,6 +491,39 @@ async function renderSnapshotFromBase(preferredScale) {
   context.drawImage(image, 0, 0, outputCanvas.width, outputCanvas.height);
   drawStatsBadge(context, outputCanvas.width, outputCanvas.height, cssToCanvasScale);
   snapshotUrl.value = outputCanvas.toDataURL('image/png');
+}
+
+async function shareSnapshot() {
+  if (!snapshotUrl.value) {
+    return;
+  }
+
+  isSharing.value = true;
+  snapshotError.value = '';
+  shareMessage.value = '';
+
+  try {
+    const sharedMap = await shareMapImage({
+      imageDataUrl: snapshotUrl.value,
+      stats: getShareStats(),
+    });
+
+    shareMessage.value = 'Image partagée dans la galerie.';
+    emit('shared-map-created', sharedMap);
+  } catch (error) {
+    snapshotError.value = error.message || 'Partage impossible.';
+  } finally {
+    isSharing.value = false;
+  }
+}
+
+function getShareStats() {
+  const rows = getAllTimeStatsRows(props.activities) || [];
+
+  return Object.fromEntries(rows.map((row) => [row.key, {
+    label: row.label,
+    value: row.value,
+  }]));
 }
 
 function drawStatsBadge(context, width, height, cssToCanvasScale = 1) {
@@ -571,6 +609,7 @@ function clearSnapshot() {
   snapshotBaseUrl.value = '';
   snapshotUrl.value = '';
   snapshotError.value = '';
+  shareMessage.value = '';
 }
 
 function loadImage(source) {
@@ -694,6 +733,15 @@ function clamp(value, min, max) {
           <button v-else class="capture-button" type="button" @click="clearSnapshot">
             Réajuster
           </button>
+          <button
+            v-if="snapshotUrl"
+            class="capture-share"
+            type="button"
+            :disabled="isSharing"
+            @click="shareSnapshot"
+          >
+            {{ isSharing ? 'Partage...' : 'Partager ma photo' }}
+          </button>
           <a
             v-if="snapshotUrl"
             class="capture-download"
@@ -703,6 +751,7 @@ function clamp(value, min, max) {
             Télécharger l'image
           </a>
         </div>
+        <p v-if="shareMessage" class="capture-share-message">{{ shareMessage }}</p>
       </div>
       <p v-if="snapshotError" class="capture-error">{{ snapshotError }}</p>
     </div>
