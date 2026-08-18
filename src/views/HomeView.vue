@@ -36,7 +36,7 @@ const inspirationSteps = [
     eyebrow: 'Créatif',
     title: 'Dessinez avec vos traces',
     description:
-      'Utilisez vos parcours comme matière première : une forme, un mot, une ligne symbolique, ou juste une trace qui raconte quelque chose.',
+      'Utilisez vos parcours comme matière première : une forme, un mot, une ligne symbolique. Vous pouvez même dessiner un tracé sur mesure avec un outil comme <a href="https://drawmyloop.com/fr" target="_blank" rel="noopener">Draw My Loop</a>, puis l’importer ici en GPX.',
     meta: 'Tracer',
   },
 ];
@@ -66,7 +66,7 @@ function createWaypointAnimation() {
 
     points.unshift({
       x: points[0].x + 90,
-      y: Math.max(12, points[0].y - 170),
+      y: Math.max(12, points[0].y - 120),
     });
 
     waypointCanvas.value.setAttribute('viewBox', `0 0 ${stageRect.width} ${stageRect.height}`);
@@ -88,6 +88,7 @@ function createWaypointAnimation() {
 
     gsap.set(routeMarker.value, {
       transformOrigin: '50% 50%',
+      scale: 0.75,
     });
 
     const canScroll = root.value.scrollHeight - root.value.clientHeight > 160;
@@ -142,6 +143,18 @@ function createWaypointAnimation() {
         start: 'top 80%',
       },
     });
+
+    gsap.from('.closing-panel', {
+      y: 44,
+      opacity: 0,
+      duration: 0.8,
+      ease: 'power3.out',
+      scrollTrigger: {
+        scroller: root.value,
+        trigger: '.closing-section',
+        start: 'top 85%',
+      },
+    });
   }, root.value);
 }
 
@@ -156,24 +169,17 @@ function buildWindingPoints(anchors, bounds) {
     const previous = anchors[index];
     const deltaX = anchor.x - previous.x;
     const deltaY = anchor.y - previous.y;
-    const distance = Math.hypot(deltaX, deltaY) || 1;
-    const normalX = -deltaY / distance;
-    const normalY = deltaX / distance;
-    const swing = gsap.utils.clamp(70, 190, distance * 0.34);
-    const direction = index % 2 === 0 ? 1 : -1;
-    const detours = distance < 240
-      ? []
-      : [
-        { at: 0.3, side: direction },
-        { at: 0.72, side: -direction * 0.9 },
-      ];
+    const distance = Math.hypot(deltaX, deltaY);
 
-    detours.forEach(({ at, side }) => {
+    if (distance >= 220) {
+      const sideX = Math.abs(deltaX) > 80 ? Math.sign(deltaX) : (index % 2 === 0 ? -1 : 1);
+      const swing = gsap.utils.clamp(120, 240, bounds.width * 0.18);
+
       points.push({
-        x: gsap.utils.clamp(12, bounds.width - 12, previous.x + deltaX * at + normalX * swing * side),
-        y: previous.y + deltaY * at + normalY * swing * side,
+        x: gsap.utils.clamp(30, bounds.width - 30, (previous.x + anchor.x) / 2 + sideX * swing),
+        y: previous.y + deltaY * 0.5,
       });
-    });
+    }
 
     points.push(anchor);
   });
@@ -280,14 +286,32 @@ onBeforeUnmount(() => {
             :class="`is-step-${index + 1}`"
           >
             <span class="waypoint-target" aria-hidden="true"></span>
-            <header class="waypoint-card-top">
-              <span class="waypoint-card-index">{{ String(index + 1).padStart(2, '0') }}</span>
-              <p class="home-eyebrow">{{ step.eyebrow }}</p>
-            </header>
+            <p class="home-eyebrow">{{ step.eyebrow }}</p>
             <h3>{{ step.title }}</h3>
-            <p>{{ step.description }}</p>
+            <p v-html="step.description"></p>
             <span class="waypoint-card-meta">{{ step.meta }}</span>
           </article>
+        </div>
+      </section>
+
+      <section class="closing-section" aria-labelledby="closing-title">
+        <div class="closing-panel">
+          <p class="home-eyebrow">Prêt à partir ?</p>
+          <h2 id="closing-title">Votre carte du monde commence ici</h2>
+          <p>
+            Connectez Strava et importez toutes vos activités d’un coup,
+            sélectionnez quelques traces ou déposez vos fichiers GPX. On ne
+            conserve que l’essentiel — vos tracés et vos kilomètres cumulés,
+            rien d’autre.
+          </p>
+          <ul class="closing-points">
+            <li>Tout Strava en un clic</li>
+            <li>Traces choisies ou fichiers GPX</li>
+            <li>Léger par design : aucune stat détaillée stockée</li>
+          </ul>
+          <button class="home-primary" type="button" @click="emit('open-app')">
+            Créer ma carte
+          </button>
         </div>
       </section>
 

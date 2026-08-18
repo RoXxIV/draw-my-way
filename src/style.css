@@ -149,7 +149,7 @@ button:disabled {
 
 .section-heading {
   padding-top: 24px;
-  margin-bottom: 18px;
+  margin-bottom: 44px;
 }
 
 .section-heading h2 {
@@ -166,9 +166,9 @@ button:disabled {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
   column-gap: 24px;
-  row-gap: 150px;
+  row-gap: 90px;
   margin-top: 20px;
-  padding-bottom: 30px;
+  padding-bottom: 20px;
 }
 
 .waypoint-canvas {
@@ -188,14 +188,14 @@ button:disabled {
 }
 
 .waypoint-guide {
-  stroke: rgba(127, 140, 153, 0.22);
-  stroke-dasharray: 8 16;
-  stroke-width: 3;
+  stroke: rgba(127, 140, 153, 0.3);
+  stroke-dasharray: 0.1 12;
+  stroke-width: 2.5;
 }
 
 .waypoint-route {
   stroke: #ff4f00;
-  stroke-width: 5;
+  stroke-width: 4;
 }
 
 .waypoint-marker {
@@ -240,7 +240,7 @@ button:disabled {
 
 .waypoint-card.is-step-1 {
   grid-row: 1;
-  grid-column: 1 / 6;
+  grid-column: 2 / 7;
 }
 
 .waypoint-card.is-step-1 .waypoint-target {
@@ -252,7 +252,7 @@ button:disabled {
 
 .waypoint-card.is-step-2 {
   grid-row: 2;
-  grid-column: 8 / 13;
+  grid-column: 7 / 12;
 }
 
 .waypoint-card.is-step-2 .waypoint-target {
@@ -263,37 +263,18 @@ button:disabled {
 
 .waypoint-card.is-step-3 {
   grid-row: 3;
-  grid-column: 2 / 7;
+  grid-column: 4 / 9;
 }
 
 .waypoint-card.is-step-3 .waypoint-target {
-  top: 50%;
-  right: -9px;
-  left: auto;
-  transform: translateY(-50%);
+  top: -9px;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
 }
 
-.waypoint-card-top {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.waypoint-card-top .home-eyebrow {
+.waypoint-card .home-eyebrow {
   margin: 0;
-}
-
-.waypoint-card-index {
-  display: inline-grid;
-  min-width: 34px;
-  height: 34px;
-  place-items: center;
-  border-radius: 10px;
-  padding: 0 6px;
-  background: #17212b;
-  color: #ffffff;
-  font-size: 0.8rem;
-  font-weight: 900;
 }
 
 .waypoint-card h3 {
@@ -311,6 +292,17 @@ button:disabled {
   line-height: 1.55;
 }
 
+.waypoint-card p a {
+  color: #ff4f00;
+  font-weight: 750;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.waypoint-card p a:hover {
+  color: #d94300;
+}
+
 .waypoint-card-meta {
   display: inline-flex;
   align-items: center;
@@ -326,6 +318,91 @@ button:disabled {
 .waypoint-card-meta::after {
   content: "→";
   font-size: 0.9rem;
+}
+
+.closing-section {
+  padding: 20px 0 64px;
+}
+
+.closing-panel {
+  position: relative;
+  overflow: hidden;
+  border-radius: 20px;
+  padding: 46px 48px;
+  background: linear-gradient(135deg, #1b2733, #101820);
+  color: #f4f6f8;
+  box-shadow: 0 30px 60px rgba(16, 24, 32, 0.28);
+}
+
+.closing-panel::before,
+.closing-panel::after {
+  position: absolute;
+  width: 360px;
+  height: 360px;
+  border-radius: 999px;
+  content: "";
+  pointer-events: none;
+}
+
+.closing-panel::before {
+  top: -160px;
+  right: -120px;
+  background: radial-gradient(circle, rgba(255, 79, 0, 0.32), transparent 70%);
+}
+
+.closing-panel::after {
+  bottom: -220px;
+  left: -140px;
+  background: radial-gradient(circle, rgba(255, 79, 0, 0.16), transparent 70%);
+}
+
+.closing-panel > * {
+  position: relative;
+  z-index: 1;
+}
+
+.closing-panel h2 {
+  margin: 0 0 14px;
+  color: #ffffff;
+  font-size: clamp(1.6rem, 3vw, 2.3rem);
+  line-height: 1.08;
+}
+
+.closing-panel > p:not(.home-eyebrow) {
+  max-width: 560px;
+  margin: 0 0 24px;
+  color: rgba(244, 246, 248, 0.76);
+  font-size: 0.98rem;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.closing-points {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 28px;
+  padding: 0;
+  list-style: none;
+}
+
+.closing-points li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(244, 246, 248, 0.92);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.closing-points li::before {
+  content: "✓";
+  color: #ff4f00;
+  font-weight: 900;
 }
 
 .site-footer {
@@ -1570,7 +1647,7 @@ h1 {
 
 @media (max-width: 980px) {
   .waypoint-stage {
-    row-gap: 120px;
+    row-gap: 80px;
   }
 
   .waypoint-card.is-step-1 {
@@ -1582,7 +1659,7 @@ h1 {
   }
 
   .waypoint-card.is-step-3 {
-    grid-column: 1 / 8;
+    grid-column: 3 / 10;
   }
 }
 
@@ -1640,6 +1717,14 @@ h1 {
   .waypoint-card.is-step-3 {
     grid-row: auto;
     grid-column: 1;
+  }
+
+  .closing-section {
+    padding-bottom: 44px;
+  }
+
+  .closing-panel {
+    padding: 30px 24px;
   }
 
   .site-footer {
