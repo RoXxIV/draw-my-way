@@ -1,6 +1,6 @@
 import { openDB } from 'idb';
 
-// Keep the original IndexedDB name so existing local TerraTrace imports survive the rename.
+// Keep the original IndexedDB name so existing local imports survive the rename.
 const DB_NAME = 'france-gpx-activities';
 const DB_VERSION = 1;
 const STORE_NAME = 'activities';

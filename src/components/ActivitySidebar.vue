@@ -5,6 +5,7 @@ import { CAPTURE_FORMATS, CAPTURE_STATS_POSITIONS } from '../config/capture';
 import { getAllTimeStatsRows, STATS_ROW_OPTIONS } from '../services/activityStats';
 
 const CUSTOM_TEXT_MAX_LENGTH = 70;
+const CUSTOM_STAT_MAX_LENGTH = 32;
 
 const props = defineProps({
   activities: {
@@ -28,6 +29,10 @@ const props = defineProps({
     default: false,
   },
   isImporting: {
+    type: Boolean,
+    default: false,
+  },
+  isSearchingStravaDate: {
     type: Boolean,
     default: false,
   },
@@ -59,11 +64,18 @@ const props = defineProps({
     type: Object,
     required: true,
   },
+  stravaDateSearch: {
+    type: Object,
+    required: true,
+  },
 });
 
 const emit = defineEmits([
   'connect-strava',
   'disconnect-strava',
+  'import-gpx',
+  'import-strava-date-selection',
+  'search-strava-date',
   'toggle-footprint-mode',
   'toggle-capture-mode',
   'update-capture-settings',
@@ -75,7 +87,12 @@ const emit = defineEmits([
 ]);
 
 const isMenuOpen = ref(false);
+const gpxInput = ref(null);
+const stravaDate = ref(new Date().toISOString().slice(0, 10));
+const selectedStravaActivityIds = ref([]);
 const stravaStats = computed(() => getAllTimeStatsRows(props.activities));
+const customStats = computed(() => normalizeCustomStats(props.captureSettings.customStats));
+const stravaDateActivities = computed(() => props.stravaDateSearch.activities || []);
 
 function updateCaptureSettings(partialSettings) {
   emit('update-capture-settings', {
@@ -100,8 +117,83 @@ function updateCustomText(event) {
   });
 }
 
+function updateCustomStat(index, field, event) {
+  const nextCustomStats = customStats.value.map((row) => ({ ...row }));
+  nextCustomStats[index][field] = event.target.value.slice(0, CUSTOM_STAT_MAX_LENGTH);
+  updateCaptureSettings({ customStats: nextCustomStats });
+}
+
 function updateCaptureFormat(format) {
   updateCaptureSettings({ format });
+}
+
+function openGpxImport() {
+  gpxInput.value?.click();
+}
+
+function importGpx(event) {
+  const file = event.target.files?.[0];
+
+  if (file) {
+    emit('import-gpx', file);
+  }
+
+  event.target.value = '';
+}
+
+function searchStravaDate() {
+  selectedStravaActivityIds.value = [];
+  emit('search-strava-date', stravaDate.value);
+}
+
+function toggleStravaDateActivity(activityId) {
+  const id = String(activityId);
+
+  if (selectedStravaActivityIds.value.includes(id)) {
+    selectedStravaActivityIds.value = selectedStravaActivityIds.value.filter((selectedId) => selectedId !== id);
+    return;
+  }
+
+  selectedStravaActivityIds.value = [...selectedStravaActivityIds.value, id];
+}
+
+function selectAllStravaDateActivities() {
+  selectedStravaActivityIds.value = stravaDateActivities.value
+    .filter((activity) => activity.hasMap)
+    .map((activity) => String(activity.id));
+}
+
+function importStravaDateSelection() {
+  emit('import-strava-date-selection', selectedStravaActivityIds.value);
+}
+
+function normalizeCustomStats(stats) {
+  const rows = Array.isArray(stats) ? stats : [];
+
+  return [0, 1].map((index) => ({
+    value: String(rows[index]?.value || '').slice(0, CUSTOM_STAT_MAX_LENGTH),
+    label: String(rows[index]?.label || '').slice(0, CUSTOM_STAT_MAX_LENGTH),
+  }));
+}
+
+function formatActivityDistance(activity) {
+  return `${(Number(activity.distanceMeters || 0) / 1000).toLocaleString('fr-FR', {
+    maximumFractionDigits: 1,
+    minimumFractionDigits: 1,
+  })} km`;
+}
+
+function formatActivityTime(activity) {
+  const date = new Date(activity.startDateLocal || activity.startDate);
+
+  if (!Number.isFinite(date.getTime())) {
+    return '';
+  }
+
+  return new Intl.DateTimeFormat('fr-FR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
 }
 
 </script>
@@ -130,7 +222,7 @@ function updateCaptureFormat(format) {
     <div class="stats-card-content">
       <header class="stats-card-header">
         <div>
-          <h1>TerraTrace</h1>
+          <h1>DrawMyWay</h1>
           <p>La carte de tous vos chemins</p>
         </div>
         <button
@@ -152,9 +244,9 @@ function updateCaptureFormat(format) {
       </header>
 
       <p v-if="isLoading" class="muted">Chargement des activités...</p>
-      <p v-else-if="!stravaStats" class="empty-state">Connecte Strava pour afficher tes statistiques.</p>
+      <p v-else-if="!stravaStats" class="empty-state">Ajoute un GPX ou connecte Strava pour afficher tes statistiques.</p>
 
-      <section v-else class="stats-panel">
+      <section v-else-if="!isCaptureMode" class="stats-panel">
         <h2>Toutes les activités</h2>
         <div class="stats-metrics">
           <article v-for="row in stravaStats" :key="row.key" class="stats-metric">
@@ -179,26 +271,17 @@ function updateCaptureFormat(format) {
               :title="format.resolution"
               @click="updateCaptureFormat(format.id)"
             >
-              {{ format.label }}
+              <span>{{ format.label }}</span>
+              <small>{{ format.resolution }}</small>
             </button>
           </div>
         </div>
 
-        <label class="photo-toggle">
-          <input
-            type="checkbox"
-            :checked="captureSettings.showStatsBadge"
-            @change="updateCaptureSettings({ showStatsBadge: !captureSettings.showStatsBadge })"
-          />
-          <span>Afficher les stats</span>
-        </label>
-
-        <div class="photo-stat-lines" :class="{ 'is-disabled': !captureSettings.showStatsBadge }">
+        <div class="photo-stat-lines">
           <label v-for="row in STATS_ROW_OPTIONS" :key="row.key" class="photo-toggle">
             <input
               type="checkbox"
               :checked="captureSettings.statRows[row.key]"
-              :disabled="!captureSettings.showStatsBadge"
               @change="updateCaptureStatRow(row.key)"
             />
             <span>{{ row.label }}</span>
@@ -217,8 +300,34 @@ function updateCaptureFormat(format) {
         </label>
         <p class="photo-text-count">{{ captureSettings.customText.length }}/{{ CUSTOM_TEXT_MAX_LENGTH }}</p>
 
-        <div class="photo-placement" role="group" aria-label="Position des statistiques">
-          <span>Position stats</span>
+        <div class="photo-custom-stats">
+          <span>Stats personnalisées</span>
+          <div
+            v-for="(stat, index) in customStats"
+            :key="index"
+            class="photo-custom-stat-row"
+          >
+            <input
+              type="text"
+              :maxlength="CUSTOM_STAT_MAX_LENGTH"
+              :value="stat.value"
+              placeholder="Ex : 1 470 km"
+              aria-label="Valeur personnalisée"
+              @input="updateCustomStat(index, 'value', $event)"
+            />
+            <input
+              type="text"
+              :maxlength="CUSTOM_STAT_MAX_LENGTH"
+              :value="stat.label"
+              placeholder="Ex : distance"
+              aria-label="Libellé personnalisé"
+              @input="updateCustomStat(index, 'label', $event)"
+            />
+          </div>
+        </div>
+
+        <div class="photo-placement" role="group" aria-label="Placement des informations">
+          <span>Placement des informations</span>
           <div class="photo-placement-grid">
             <button
               v-for="position in CAPTURE_STATS_POSITIONS"
@@ -233,6 +342,75 @@ function updateCaptureFormat(format) {
             ></button>
           </div>
         </div>
+      </section>
+
+      <section v-if="!isCaptureMode" class="source-import-panel">
+        <p class="source-import-title">Ajouter des traces</p>
+        <input
+          ref="gpxInput"
+          class="visually-hidden"
+          type="file"
+          accept=".gpx,application/gpx+xml,application/xml,text/xml"
+          @change="importGpx"
+        />
+        <button
+          class="gpx-import-button"
+          type="button"
+          :disabled="isImporting"
+          @click="openGpxImport"
+        >
+          Importer un GPX
+        </button>
+
+        <section v-if="stravaStatus.connected" class="strava-date-import">
+          <p class="strava-date-title">Composer par date</p>
+          <div class="strava-date-search">
+            <input
+              v-model="stravaDate"
+              type="date"
+              aria-label="Date des activités Strava"
+            />
+            <button
+              type="button"
+              :disabled="isSearchingStravaDate"
+              @click="searchStravaDate"
+            >
+              {{ isSearchingStravaDate ? 'Recherche...' : 'Chercher' }}
+            </button>
+          </div>
+
+          <div v-if="stravaDateActivities.length > 0" class="strava-date-results">
+            <div class="strava-date-results-header">
+              <span>{{ stravaDateActivities.length }} activité(s)</span>
+              <button type="button" @click="selectAllStravaDateActivities">Tout cocher</button>
+            </div>
+            <label
+              v-for="activity in stravaDateActivities"
+              :key="activity.id"
+              class="strava-date-activity"
+              :class="{ 'is-disabled': !activity.hasMap }"
+            >
+              <input
+                type="checkbox"
+                :checked="selectedStravaActivityIds.includes(String(activity.id))"
+                :disabled="!activity.hasMap"
+                @change="toggleStravaDateActivity(activity.id)"
+              />
+              <span>
+                <strong>{{ activity.name }}</strong>
+                <small>{{ formatActivityTime(activity) }} · {{ formatActivityDistance(activity) }} · {{ activity.sportType || activity.type }}</small>
+              </span>
+            </label>
+            <button
+              class="strava-date-import-button"
+              type="button"
+              :disabled="isImporting || selectedStravaActivityIds.length === 0"
+              @click="importStravaDateSelection"
+            >
+              Importer la sélection
+            </button>
+          </div>
+        </section>
       </section>
 
       <RouteStylePanel

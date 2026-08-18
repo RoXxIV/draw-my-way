@@ -124,6 +124,83 @@ export function configureStravaApi(server, env) {
       });
     }
   });
+
+  server.middlewares.use('/api/strava/activities-by-date', async (req, res) => {
+    if (req.method !== 'GET') {
+      sendJson(res, 405, { error: 'MÃ©thode non autorisÃ©e.' });
+      return;
+    }
+
+    try {
+      const accessToken = await getConnectedAccessToken(env);
+      const requestUrl = new URL(req.url, buildOrigin(req));
+      const range = readActivityRange(requestUrl.searchParams);
+      const activities = await fetchAllActivities(accessToken, range);
+
+      sendJson(res, 200, activities.map(toActivityListItem));
+    } catch (error) {
+      sendJson(res, error.status || 500, {
+        error: error.message || 'Recherche Strava impossible.',
+      });
+    }
+  });
+
+  server.middlewares.use('/api/strava/import-selected', async (req, res) => {
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { error: 'MÃ©thode non autorisÃ©e.' });
+      return;
+    }
+
+    try {
+      const accessToken = await getConnectedAccessToken(env);
+      const body = await readJsonBody(req);
+      const activityIds = Array.isArray(body.activityIds) ? body.activityIds.map(String) : [];
+
+      if (activityIds.length === 0) {
+        const error = new Error('SÃ©lectionne au moins une activitÃ© Strava.');
+        error.status = 422;
+        throw error;
+      }
+
+      const range = readActivityRange(new URLSearchParams({
+        after: String(body.after || ''),
+        before: String(body.before || ''),
+      }));
+      const activities = await fetchAllActivities(accessToken, range);
+      const selectedActivities = activities.filter((activity) => activityIds.includes(String(activity.id)));
+
+      if (selectedActivities.length === 0) {
+        const error = new Error('Aucune activitÃ© sÃ©lectionnÃ©e trouvÃ©e sur cette date.');
+        error.status = 422;
+        throw error;
+      }
+
+      sendJson(res, 200, buildAggregateActivity(selectedActivities, {
+        id: `strava-selection-${activityIds.sort().join('-')}`,
+        name: 'Strava - sÃ©lection',
+        type: 'strava_selection',
+        fileName: 'SÃ©lection Strava',
+      }));
+    } catch (error) {
+      sendJson(res, error.status || 500, {
+        error: error.message || 'Import de la sÃ©lection Strava impossible.',
+      });
+    }
+  });
+}
+
+async function getConnectedAccessToken(env) {
+  assertBaseStravaConfig(env);
+  const session = await readSession();
+  const refreshToken = getRefreshToken(env, session);
+
+  if (!refreshToken) {
+    const error = new Error('Connecte-toi avec Strava avant import.');
+    error.status = 401;
+    throw error;
+  }
+
+  return refreshAccessToken(env, refreshToken);
 }
 
 function assertBaseStravaConfig(env) {
@@ -199,14 +276,23 @@ function getRefreshToken(env, session) {
   return session?.refreshToken || '';
 }
 
-async function fetchAllActivities(accessToken) {
+async function fetchAllActivities(accessToken, options = {}) {
   const activities = [];
+  const maxPages = options.maxPages || STRAVA_MAX_PAGES;
 
   // Strava is paginated; the cap protects the local dev server from endless imports.
-  for (let page = 1; page <= STRAVA_MAX_PAGES; page += 1) {
+  for (let page = 1; page <= maxPages; page += 1) {
     const url = new URL(STRAVA_ACTIVITIES_URL);
     url.searchParams.set('page', String(page));
     url.searchParams.set('per_page', String(STRAVA_PER_PAGE));
+
+    if (options.after) {
+      url.searchParams.set('after', String(options.after));
+    }
+
+    if (options.before) {
+      url.searchParams.set('before', String(options.before));
+    }
 
     const response = await fetch(url, {
       headers: {
@@ -232,7 +318,7 @@ async function fetchAllActivities(accessToken) {
   return activities;
 }
 
-function buildAggregateActivity(activities) {
+function buildAggregateActivity(activities, options = {}) {
   const lines = [];
   let sourceActivities = 0;
   let pointCount = 0;
@@ -281,12 +367,12 @@ function buildAggregateActivity(activities) {
   }
 
   return {
-    id: STRAVA_AGGREGATE_ID,
-    fingerprint: STRAVA_AGGREGATE_ID,
-    name: 'Strava - de tout temps',
-    type: 'strava_summary',
+    id: options.id || STRAVA_AGGREGATE_ID,
+    fingerprint: options.id || STRAVA_AGGREGATE_ID,
+    name: options.name || 'Strava - de tout temps',
+    type: options.type || 'strava_summary',
     startTime: latestStartTime,
-    fileName: 'API Strava',
+    fileName: options.fileName || 'API Strava',
     pointCount,
     sourceActivityCount: sourceActivities,
     stats,
@@ -299,6 +385,62 @@ function buildAggregateActivity(activities) {
 
 function toNumber(value) {
   return Number.isFinite(Number(value)) ? Number(value) : 0;
+}
+
+function readActivityRange(searchParams) {
+  const after = Number(searchParams.get('after'));
+  const before = Number(searchParams.get('before'));
+
+  if (!Number.isFinite(after) || !Number.isFinite(before) || before <= after) {
+    const error = new Error('Plage de dates invalide.');
+    error.status = 400;
+    throw error;
+  }
+
+  return {
+    after: Math.floor(after),
+    before: Math.floor(before),
+    maxPages: 2,
+  };
+}
+
+function toActivityListItem(activity) {
+  return {
+    id: String(activity.id),
+    name: activity.name || 'ActivitÃ© Strava',
+    type: activity.type || activity.sport_type || '',
+    sportType: activity.sport_type || activity.type || '',
+    startDate: activity.start_date || '',
+    startDateLocal: activity.start_date_local || activity.start_date || '',
+    distanceMeters: toNumber(activity.distance),
+    movingTimeSeconds: toNumber(activity.moving_time),
+    elevationGainMeters: toNumber(activity.total_elevation_gain),
+    hasMap: Boolean(activity.map?.summary_polyline),
+  };
+}
+
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+
+    req.on('data', (chunk) => {
+      body += chunk;
+
+      if (body.length > 100000) {
+        reject(Object.assign(new Error('RequÃªte trop volumineuse.'), { status: 413 }));
+      }
+    });
+
+    req.on('end', () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch {
+        reject(Object.assign(new Error('JSON invalide.'), { status: 400 }));
+      }
+    });
+
+    req.on('error', reject);
+  });
 }
 
 function decodePolyline(polyline) {

@@ -2,10 +2,9 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import maplibregl from 'maplibre-gl';
 import { bbox } from '@turf/bbox';
-import { CAPTURE_FORMATS, CAPTURE_STATS_POSITIONS } from '../config/capture';
+import { CAPTURE_FORMATS } from '../config/capture';
 import { FRANCE_CENTER, FRANCE_ZOOM, getMapStyleUrl, isThreeDimensionalStyle } from '../config/map';
 import { getAllTimeStatsRows } from '../services/activityStats';
-import { shareMapImage } from '../services/sharedMaps';
 
 const props = defineProps({
   activities: {
@@ -46,17 +45,15 @@ const props = defineProps({
   },
 });
 
-const emit = defineEmits(['shared-map-created', 'update-capture-stats-position']);
+const emit = defineEmits(['close-capture-mode', 'update-capture-stats-position']);
 const mapContainer = ref(null);
 const captureFrame = ref(null);
 const mapLoaded = ref(false);
 const isStyleLoading = ref(false);
 const isCapturing = ref(false);
-const isSharing = ref(false);
 const snapshotBaseUrl = ref('');
 const snapshotUrl = ref('');
 const snapshotError = ref('');
-const shareMessage = ref('');
 let map = null;
 let lastFitFeatureCount = 0;
 let snapshotRenderVersion = 0;
@@ -79,19 +76,20 @@ const visibleFeatureCollection = computed(() => ({
       geometry: activity.geometry,
     })),
 }));
-const captureDownloadName = computed(() => `terratrace-${new Date().toISOString().slice(0, 10)}.png`);
+const captureDownloadName = computed(() => `drawmyway-${new Date().toISOString().slice(0, 10)}.png`);
 const captureCustomText = computed(() => props.captureSettings.customText.trim());
 const activeCaptureFormat = computed(() => (
   CAPTURE_FORMATS.find((format) => format.id === props.captureSettings.format) || CAPTURE_FORMATS[2]
 ));
 const capturePreviewRows = computed(() => {
-  if (!props.captureSettings.showStatsBadge) {
-    return [];
-  }
-
   return (getAllTimeStatsRows(props.activities) || []).filter((row) => props.captureSettings.statRows[row.key]);
 });
-const shouldShowCaptureStatsPreview = computed(() => props.captureSettings.showStatsBadge || Boolean(captureCustomText.value));
+const captureCustomStatLines = computed(() => getCustomStatLines(props.captureSettings.customStats));
+const captureStatLines = computed(() => [
+  ...getCompactStatLines(capturePreviewRows.value),
+  ...captureCustomStatLines.value,
+]);
+const shouldShowCaptureStatsPreview = computed(() => captureStatLines.value.length > 0 || Boolean(captureCustomText.value));
 
 onMounted(() => {
   map = new maplibregl.Map({
@@ -198,7 +196,6 @@ watch(
       snapshotBaseUrl.value = '';
       snapshotUrl.value = '';
       snapshotError.value = '';
-      shareMessage.value = '';
     }
   },
 );
@@ -424,7 +421,6 @@ async function captureMapImage() {
   isCapturing.value = true;
   snapshotError.value = '';
   snapshotUrl.value = '';
-  shareMessage.value = '';
 
   await waitForMapFrame();
 
@@ -493,67 +489,72 @@ async function renderSnapshotFromBase(preferredScale) {
   snapshotUrl.value = outputCanvas.toDataURL('image/png');
 }
 
-async function shareSnapshot() {
-  if (!snapshotUrl.value) {
-    return;
+
+function getCompactStatLines(rows) {
+  const byKey = Object.fromEntries(rows.map((row) => [row.key, row]));
+  const lines = [];
+
+  if (byKey.activityCount) {
+    lines.push(`${byKey.activityCount.value} activités`);
   }
 
-  isSharing.value = true;
-  snapshotError.value = '';
-  shareMessage.value = '';
-
-  try {
-    const sharedMap = await shareMapImage({
-      imageDataUrl: snapshotUrl.value,
-      stats: getShareStats(),
-    });
-
-    shareMessage.value = 'Image partagée dans la galerie.';
-    emit('shared-map-created', sharedMap);
-  } catch (error) {
-    snapshotError.value = error.message || 'Partage impossible.';
-  } finally {
-    isSharing.value = false;
+  if (byKey.distance && byKey.movingTime) {
+    lines.push(`${byKey.distance.value} · ${byKey.movingTime.value}`);
+  } else if (byKey.distance) {
+    lines.push(`${byKey.distance.value} distance`);
+  } else if (byKey.movingTime) {
+    lines.push(`${byKey.movingTime.value} temps`);
   }
+
+  if (byKey.elevationGain) {
+    lines.push(`${byKey.elevationGain.value} de dénivelé`);
+  }
+
+  return lines;
 }
 
-function getShareStats() {
-  const rows = getAllTimeStatsRows(props.activities) || [];
+function getCustomStatLines(customStats) {
+  const rows = Array.isArray(customStats) ? customStats : [];
 
-  return Object.fromEntries(rows.map((row) => [row.key, {
-    label: row.label,
-    value: row.value,
-  }]));
+  return rows
+    .map((row) => ({
+      value: String(row?.value || '').trim(),
+      label: String(row?.label || '').trim(),
+    }))
+    .filter((row) => row.value || row.label)
+    .map((row) => [row.value, row.label].filter(Boolean).join(' '));
 }
 
 function drawStatsBadge(context, width, height, cssToCanvasScale = 1) {
   const customText = props.captureSettings.customText.trim();
+  const rows = (getAllTimeStatsRows(props.activities) || []).filter((row) => props.captureSettings.statRows[row.key]);
+  const statLines = [
+    ...getCompactStatLines(rows),
+    ...getCustomStatLines(props.captureSettings.customStats),
+  ];
 
-  if (!props.captureSettings.showStatsBadge && !customText) {
+  if (statLines.length === 0 && !customText) {
     return;
   }
 
-  const rows = props.captureSettings.showStatsBadge
-    ? (getAllTimeStatsRows(props.activities) || []).filter((row) => props.captureSettings.statRows[row.key])
-    : [];
-  const headline = customText || 'Votre carte';
-  const metaRows = rows.slice(0, 2);
   const isCompactExport = window.matchMedia('(max-width: 760px)').matches;
   const scale = Math.max(cssToCanvasScale, 1);
   const availableWidth = Math.max(width - Math.round((isCompactExport ? 24 : 44) * scale), 1);
-  const padding = Math.round((isCompactExport ? 10 : 22) * scale);
-  const panelWidth = Math.min(availableWidth, Math.round((isCompactExport ? 178 : 320) * scale));
-  const brandFontSize = Math.round((isCompactExport ? 12 : 24) * scale);
-  const headlineFontSize = Math.round((isCompactExport ? 10 : 18) * scale);
+  const padding = Math.round((isCompactExport ? 9 : 18) * scale);
+  const panelWidth = Math.min(availableWidth, Math.round((isCompactExport ? 184 : 300) * scale));
+  const brandFontSize = Math.round((isCompactExport ? 11 : 18) * scale);
+  const headlineFontSize = Math.round((isCompactExport ? 9 : 15) * scale);
   const detailFontSize = Math.round((isCompactExport ? 8 : 13) * scale);
-  const brandLineHeight = Math.round((isCompactExport ? 16 : 34) * scale);
-  const headlineLineHeight = Math.round((isCompactExport ? 14 : 24) * scale);
-  const detailLineHeight = Math.round((isCompactExport ? 13 : 28) * scale);
-  const sectionGap = Math.round((isCompactExport ? 6 : 12) * scale);
-  const metaHeight = props.captureSettings.showStatsBadge ? metaRows.length * detailLineHeight : 0;
+  const accentHeight = Math.max(Math.round(3 * scale), 2);
+  const brandToAccentGap = Math.round(5 * scale);
+  const afterAccentGap = Math.round((isCompactExport ? 8 : 11) * scale);
+  const customToStatsGap = customText && statLines.length > 0 ? Math.round((isCompactExport ? 5 : 8) * scale) : 0;
+  const detailLineHeight = Math.round((isCompactExport ? 12 : 21) * scale);
+  const headlineLineHeight = customText ? Math.round((isCompactExport ? 13 : 21) * scale) : 0;
+  const metaHeight = statLines.length * detailLineHeight;
   const panelHeight = Math.min(
     Math.max(height - padding * 2, 1),
-    padding * 2 + brandLineHeight + headlineLineHeight + metaHeight + sectionGap,
+    padding * 2 + brandFontSize + brandToAccentGap + accentHeight + afterAccentGap + headlineLineHeight + customToStatsGap + metaHeight,
   );
   const { x, y } = getStatsBadgePosition(props.captureStatsPosition, width, height, panelWidth, panelHeight, padding);
 
@@ -569,21 +570,31 @@ function drawStatsBadge(context, width, height, cssToCanvasScale = 1) {
   let cursorY = y + padding + brandFontSize;
 
   context.fillStyle = '#17212b';
-  context.font = `800 ${brandFontSize}px Inter, Arial, sans-serif`;
-  context.fillText('TerraTrace', x + padding, cursorY);
-  cursorY += sectionGap + headlineFontSize;
+  context.font = `900 ${brandFontSize}px Inter, Arial, sans-serif`;
+  context.fillText('DrawMyWay', x + padding, cursorY);
 
-  context.fillStyle = customText ? '#fc4c02' : '#17212b';
-  context.font = `850 ${headlineFontSize}px Inter, Arial, sans-serif`;
-  context.fillText(truncateText(context, headline, panelWidth - padding * 2), x + padding, cursorY);
-  cursorY += detailLineHeight;
+  cursorY += brandToAccentGap;
+  context.fillStyle = props.routeColor;
+  drawRoundRect(context, x + padding, cursorY, Math.round(38 * scale), accentHeight, Math.round(2 * scale));
+  context.fill();
+  cursorY += accentHeight + afterAccentGap;
 
-  metaRows.forEach((row, index) => {
+  if (customText) {
+    cursorY += headlineFontSize;
+    context.fillStyle = props.routeColor;
+    context.font = `850 ${headlineFontSize}px Inter, Arial, sans-serif`;
+    context.fillText(truncateText(context, customText, panelWidth - padding * 2), x + padding, cursorY);
+    cursorY += customToStatsGap + detailFontSize;
+  } else {
+    cursorY += detailFontSize;
+  }
+
+  statLines.forEach((line, index) => {
     const rowY = cursorY + index * detailLineHeight;
 
     context.fillStyle = '#344451';
     context.font = `700 ${detailFontSize}px Inter, Arial, sans-serif`;
-    context.fillText(`${row.value} ${row.label.toLowerCase()}`, x + padding, rowY);
+    context.fillText(truncateText(context, line, panelWidth - padding * 2), x + padding, rowY);
   });
 }
 
@@ -601,15 +612,10 @@ function truncateText(context, text, maxWidth) {
   return `${truncated}...`;
 }
 
-function updateCaptureStatsPosition(position) {
-  emit('update-capture-stats-position', position);
-}
-
 function clearSnapshot() {
   snapshotBaseUrl.value = '';
   snapshotUrl.value = '';
   snapshotError.value = '';
-  shareMessage.value = '';
 }
 
 function loadImage(source) {
@@ -685,40 +691,42 @@ function clamp(value, min, max) {
     <div ref="mapContainer" class="map-container"></div>
     <div v-if="isCaptureMode" class="capture-overlay">
       <div ref="captureFrame" class="capture-frame" :class="`is-${activeCaptureFormat.id}`">
+        <button
+          class="capture-close"
+          type="button"
+          aria-label="Fermer le mode photo"
+          title="Fermer le mode photo"
+          @click="emit('close-capture-mode')"
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24">
+            <path
+              d="M6 6l12 12M18 6 6 18"
+              fill="none"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-width="2"
+            />
+          </svg>
+        </button>
         <span class="capture-resolution">{{ activeCaptureFormat.resolution }}</span>
         <img
           v-if="snapshotUrl"
           class="capture-preview"
           :src="snapshotUrl"
-          alt="Aperçu de la capture TerraTrace"
+          alt="Aperçu de la capture DrawMyWay"
         />
         <div
           v-if="shouldShowCaptureStatsPreview && !snapshotUrl"
           class="capture-stats-preview"
           :class="`is-${captureStatsPosition}`"
+          :style="{ '--capture-accent-color': routeColor }"
           aria-hidden="true"
         >
-          <p class="capture-stats-brand">TerraTrace</p>
-          <p class="capture-stats-text">{{ captureCustomText || 'Votre carte' }}</p>
-          <p v-if="captureSettings.showStatsBadge && capturePreviewRows.length > 0" class="capture-stats-source">
-            {{ capturePreviewRows.slice(0, 2).map((row) => `${row.value} ${row.label.toLowerCase()}`).join(' · ') }}
-          </p>
-        </div>
-        <div class="capture-placement" role="group" aria-label="Position des statistiques">
-          <div class="capture-placement-grid">
-            <button
-              v-for="position in CAPTURE_STATS_POSITIONS"
-              :key="position.id"
-              class="capture-placement-button"
-              :class="{ 'is-selected': captureStatsPosition === position.id }"
-              type="button"
-              :aria-label="position.label"
-              :aria-pressed="captureStatsPosition === position.id"
-              :title="position.label"
-              @click="updateCaptureStatsPosition(position.id)"
-            ></button>
+          <p class="capture-stats-brand">DrawMyWay</p>
+          <p v-if="captureCustomText" class="capture-stats-text">{{ captureCustomText }}</p>
+          <div v-if="captureStatLines.length > 0" class="capture-stats-list">
+            <p v-for="line in captureStatLines" :key="line">{{ line }}</p>
           </div>
-          <span class="capture-placement-label">Position stats</span>
         </div>
         <div class="capture-actions">
           <button
@@ -728,19 +736,10 @@ function clamp(value, min, max) {
             :disabled="isCapturing"
             @click="captureMapImage"
           >
-            {{ isCapturing ? 'Création...' : "Créer l'image" }}
+            {{ isCapturing ? 'Capture...' : 'Capturer' }}
           </button>
           <button v-else class="capture-button" type="button" @click="clearSnapshot">
             Réajuster
-          </button>
-          <button
-            v-if="snapshotUrl"
-            class="capture-share"
-            type="button"
-            :disabled="isSharing"
-            @click="shareSnapshot"
-          >
-            {{ isSharing ? 'Partage...' : 'Partager ma photo' }}
           </button>
           <a
             v-if="snapshotUrl"
@@ -751,7 +750,6 @@ function clamp(value, min, max) {
             Télécharger l'image
           </a>
         </div>
-        <p v-if="shareMessage" class="capture-share-message">{{ shareMessage }}</p>
       </div>
       <p v-if="snapshotError" class="capture-error">{{ snapshotError }}</p>
     </div>

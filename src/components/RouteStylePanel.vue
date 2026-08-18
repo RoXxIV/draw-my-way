@@ -53,10 +53,11 @@ function getMapPreviewStyle(style) {
 </script>
 
 <template>
-  <div class="style-panel" :class="{ 'is-open': isOpen }">
-    <div class="tool-buttons">
+  <div class="style-panel" :class="{ 'is-open': isOpen || isCaptureMode }">
+    <div v-if="!isCaptureMode" class="tool-buttons">
       <button
         class="style-toggle"
+        :class="{ 'is-active': isOpen }"
         type="button"
         :aria-expanded="isOpen"
         aria-label="Personnaliser la carte"
@@ -102,11 +103,11 @@ function getMapPreviewStyle(style) {
           />
           <circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="2" />
         </svg>
-        <span>Créer mon visuel</span>
+        <span>Mode photo</span>
       </button>
     </div>
 
-    <div v-if="isOpen" class="style-popover">
+    <div v-if="isOpen || isCaptureMode" class="style-popover">
       <p class="style-title">Personnaliser</p>
 
       <details class="style-section" open>

@@ -1,12 +1,12 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import ActivitySidebar from './components/ActivitySidebar.vue';
-import HomeGallery from './components/HomeGallery.vue';
-import MapView from './components/MapView.vue';
+import HomeView from './views/HomeView.vue';
+import LegalView from './views/LegalView.vue';
+import MapView from './views/MapView.vue';
 import { CAPTURE_STATS_POSITION_STORAGE_KEY, DEFAULT_CAPTURE_FORMAT, DEFAULT_CAPTURE_STATS_POSITION } from './config/capture';
 import { DEFAULT_MAP_STYLE_ID, getValidMapStyleId } from './config/map';
 import { useActivities } from './composables/useActivities';
-import { fetchSharedMaps } from './services/sharedMaps';
 
 const ROUTE_COLOR_STORAGE_KEY = 'routeColor';
 const ROUTE_RENDER_MODE_STORAGE_KEY = 'routeRenderMode';
@@ -19,8 +19,11 @@ const DEFAULT_ROUTE_RENDER_MODE = 'solid';
 const DEFAULT_ROUTE_OPACITY = 0.95;
 const DEFAULT_CAPTURE_SETTINGS = {
   format: DEFAULT_CAPTURE_FORMAT,
-  showStatsBadge: true,
   customText: '',
+  customStats: [
+    { value: '', label: '' },
+    { value: '', label: '' },
+  ],
   statRows: {
     activityCount: true,
     distance: true,
@@ -34,15 +37,20 @@ const {
   clearMessage,
   connectStrava,
   disconnectStravaAccount,
+  importGpxFile,
   importStravaActivities,
+  importStravaDateSelection,
   isCheckingStrava,
   isImporting,
   isLoading,
+  isSearchingStravaDate,
   loadActivities,
   message,
   messageType,
   removeAllActivities,
+  searchStravaActivitiesByDate,
   stravaStatus,
+  stravaDateSearch,
   refreshStravaStatus,
 } = useActivities();
 
@@ -54,10 +62,15 @@ const isCaptureMode = ref(false);
 const mapStyleId = ref(getValidMapStyleId(localStorage.getItem(MAP_STYLE_STORAGE_KEY) || DEFAULT_MAP_STYLE_ID));
 const captureSettings = ref(readCaptureSettings());
 const captureStatsPosition = ref(localStorage.getItem(CAPTURE_STATS_POSITION_STORAGE_KEY) || DEFAULT_CAPTURE_STATS_POSITION);
-const isExplorerOpen = ref(window.location.hash === '#carte');
-const sharedMaps = ref([]);
-const isSharedGalleryLoading = ref(false);
-const sharedGalleryError = ref('');
+const currentHash = ref(window.location.hash);
+const isImportChoiceOpen = ref(false);
+const legalPageIds = new Set(['mentions-legales', 'confidentialite', 'conditions']);
+const isExplorerOpen = computed(() => currentHash.value === '#carte');
+const activeLegalPage = computed(() => {
+  const pageId = currentHash.value.replace(/^#/, '');
+
+  return legalPageIds.has(pageId) ? pageId : '';
+});
 
 function updateRouteColor(color) {
   routeColor.value = color;
@@ -83,6 +96,24 @@ function toggleCaptureMode() {
   isCaptureMode.value = !isCaptureMode.value;
 }
 
+function closeCaptureMode() {
+  isCaptureMode.value = false;
+}
+
+function chooseComposeMode() {
+  isImportChoiceOpen.value = false;
+}
+
+async function chooseFullImport() {
+  isImportChoiceOpen.value = false;
+  await importStravaActivities();
+}
+
+async function handleDisconnectStrava() {
+  isImportChoiceOpen.value = false;
+  await disconnectStravaAccount();
+}
+
 function updateMapStyle(styleId) {
   mapStyleId.value = styleId;
   localStorage.setItem(MAP_STYLE_STORAGE_KEY, styleId);
@@ -99,44 +130,27 @@ function updateCaptureStatsPosition(position) {
 }
 
 function openExplorer() {
-  isExplorerOpen.value = true;
-
   if (window.location.hash !== '#carte') {
     window.history.pushState({}, '', '#carte');
   }
+
+  currentHash.value = '#carte';
 }
 
 function syncViewFromHash() {
-  isExplorerOpen.value = window.location.hash === '#carte';
-}
-
-async function loadSharedMaps() {
-  isSharedGalleryLoading.value = true;
-  sharedGalleryError.value = '';
-
-  try {
-    sharedMaps.value = await fetchSharedMaps();
-  } catch (error) {
-    sharedGalleryError.value = error.message;
-  } finally {
-    isSharedGalleryLoading.value = false;
-  }
-}
-
-function handleSharedMapCreated(sharedMap) {
-  sharedMaps.value = [
-    sharedMap,
-    ...sharedMaps.value.filter((map) => map.id !== sharedMap.id),
-  ];
+  currentHash.value = window.location.hash;
 }
 
 function readCaptureSettings() {
   try {
     const stored = JSON.parse(localStorage.getItem(CAPTURE_SETTINGS_STORAGE_KEY) || 'null');
+    const storedSettings = { ...(stored || {}) };
+    delete storedSettings.showStatsBadge;
 
     return {
       ...DEFAULT_CAPTURE_SETTINGS,
-      ...stored,
+      ...storedSettings,
+      customStats: normalizeCustomStats(storedSettings.customStats),
       statRows: {
         ...DEFAULT_CAPTURE_SETTINGS.statRows,
         ...stored?.statRows,
@@ -145,6 +159,15 @@ function readCaptureSettings() {
   } catch {
     return DEFAULT_CAPTURE_SETTINGS;
   }
+}
+
+function normalizeCustomStats(customStats) {
+  const rows = Array.isArray(customStats) ? customStats : [];
+
+  return DEFAULT_CAPTURE_SETTINGS.customStats.map((defaultRow, index) => ({
+    value: String(rows[index]?.value || defaultRow.value).slice(0, 32),
+    label: String(rows[index]?.label || defaultRow.label).slice(0, 32),
+  }));
 }
 
 function readRouteOpacity() {
@@ -171,15 +194,13 @@ async function resetLocalDataFromUrl() {
 
 async function handleOauthMessage(event) {
   if (event.origin === window.location.origin && event.data?.type === 'strava-oauth-complete') {
-    // The OAuth popup notifies the opener so the user does not need a second import click.
     await refreshStravaStatus();
-    await importStravaActivities();
+    isImportChoiceOpen.value = true;
   }
 }
 
 onMounted(() => {
   loadActivities().then(resetLocalDataFromUrl);
-  loadSharedMaps();
   window.addEventListener('hashchange', syncViewFromHash);
   window.addEventListener('message', handleOauthMessage);
 });
@@ -191,14 +212,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <HomeGallery
-    v-if="!isExplorerOpen"
-    :error="sharedGalleryError"
-    :is-loading="isSharedGalleryLoading"
-    :maps="sharedMaps"
+  <HomeView
+    v-if="!isExplorerOpen && !activeLegalPage"
     @open-app="openExplorer"
-    @refresh="loadSharedMaps"
   />
+
+  <LegalView v-else-if="activeLegalPage" :page-id="activeLegalPage" />
 
   <main v-else class="app-layout" :class="{ 'is-capture-mode': isCaptureMode }">
     <ActivitySidebar
@@ -210,13 +229,18 @@ onBeforeUnmount(() => {
       :is-checking-strava="isCheckingStrava"
       :is-footprint-mode="isFootprintMode"
       :is-importing="isImporting"
+      :is-searching-strava-date="isSearchingStravaDate"
       :map-style-id="mapStyleId"
       :route-color="routeColor"
       :route-opacity="routeOpacity"
       :route-render-mode="routeRenderMode"
+      :strava-date-search="stravaDateSearch"
       :strava-status="stravaStatus"
       @connect-strava="connectStrava"
-      @disconnect-strava="disconnectStravaAccount"
+      @disconnect-strava="handleDisconnectStrava"
+      @import-gpx="importGpxFile"
+      @import-strava-date-selection="importStravaDateSelection"
+      @search-strava-date="searchStravaActivitiesByDate"
       @toggle-capture-mode="toggleCaptureMode"
       @toggle-footprint-mode="toggleFootprintMode"
       @update-capture-settings="updateCaptureSettings"
@@ -238,7 +262,7 @@ onBeforeUnmount(() => {
         :route-color="routeColor"
         :route-opacity="routeOpacity"
         :route-render-mode="routeRenderMode"
-        @shared-map-created="handleSharedMapCreated"
+        @close-capture-mode="closeCaptureMode"
         @update-capture-stats-position="updateCaptureStatsPosition"
       />
 
@@ -246,6 +270,30 @@ onBeforeUnmount(() => {
         <div v-if="message" class="status-message" :class="messageType" role="status">
           <span>{{ message }}</span>
           <button type="button" aria-label="Fermer le message" @click="clearMessage">x</button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-if="isImportChoiceOpen"
+      class="strava-import-choice"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="strava-import-choice-title"
+    >
+      <div class="strava-import-choice-card">
+        <p class="home-eyebrow">Strava connecté</p>
+        <h2 id="strava-import-choice-title">Comment veux-tu commencer ?</h2>
+        <p>
+          Compose une carte légère en choisissant des activités par date, ou importe tout ton historique pour générer la carte complète.
+        </p>
+        <div class="strava-import-choice-actions">
+          <button type="button" class="choice-primary" @click="chooseComposeMode">
+            Composer par date
+          </button>
+          <button type="button" class="choice-secondary" :disabled="isImporting" @click="chooseFullImport">
+            Tout importer
+          </button>
         </div>
       </div>
     </div>

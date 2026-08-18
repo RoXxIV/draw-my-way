@@ -6,11 +6,26 @@ export const STATS_ROW_OPTIONS = [
 ];
 
 export function getAllTimeStatsRows(activities) {
-  const stats = activities.find((activity) => activity.type === 'strava_summary')?.stats;
+  const summaryActivities = activities.filter((activity) => ['strava_summary', 'strava_selection', 'gpx_summary'].includes(activity.type) && activity.stats);
 
-  if (!stats) {
+  if (summaryActivities.length === 0) {
     return null;
   }
+
+  const stats = summaryActivities.reduce(
+    (totals, activity) => ({
+      activityCount: totals.activityCount + Number(activity.stats.activityCount || 0),
+      distanceMeters: totals.distanceMeters + Number(activity.stats.distanceMeters || 0),
+      movingTimeSeconds: totals.movingTimeSeconds + Number(activity.stats.movingTimeSeconds || 0),
+      elevationGainMeters: totals.elevationGainMeters + Number(activity.stats.elevationGainMeters || 0),
+    }),
+    {
+      activityCount: 0,
+      distanceMeters: 0,
+      movingTimeSeconds: 0,
+      elevationGainMeters: 0,
+    },
+  );
 
   return [
     { key: 'activityCount', label: 'Activités', value: stats.activityCount.toLocaleString('fr-FR') },
