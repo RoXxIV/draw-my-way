@@ -39,6 +39,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  isImporting: {
+    type: Boolean,
+    default: false,
+  },
   mapStyleId: {
     type: String,
     required: true,
@@ -50,6 +54,7 @@ const mapContainer = ref(null);
 const captureFrame = ref(null);
 const mapLoaded = ref(false);
 const isStyleLoading = ref(false);
+const isImportOverlayVisible = ref(false);
 const isCapturing = ref(false);
 const snapshotBaseUrl = ref('');
 const snapshotUrl = ref('');
@@ -89,7 +94,10 @@ const captureStatLines = computed(() => [
   ...getCompactStatLines(capturePreviewRows.value),
   ...captureCustomStatLines.value,
 ]);
-const shouldShowCaptureStatsPreview = computed(() => captureStatLines.value.length > 0 || Boolean(captureCustomText.value));
+const isStatsOverlayEnabled = computed(() => props.captureSettings.showOverlay !== false);
+const shouldShowCaptureStatsPreview = computed(() => (
+  isStatsOverlayEnabled.value && (captureStatLines.value.length > 0 || Boolean(captureCustomText.value))
+));
 
 onMounted(() => {
   map = new maplibregl.Map({
@@ -186,6 +194,27 @@ watch(
     }
 
     applyRoutePaint();
+  },
+);
+
+watch(
+  () => props.isImporting,
+  (importing) => {
+    if (importing) {
+      isImportOverlayVisible.value = true;
+      return;
+    }
+
+    if (!map || !mapLoaded.value) {
+      isImportOverlayVisible.value = false;
+      return;
+    }
+
+    // L'import est terminé : on garde le voile jusqu'à ce que la carte ait dessiné les tracés.
+    map.once('idle', () => {
+      isImportOverlayVisible.value = false;
+    });
+    map.triggerRepaint();
   },
 );
 
@@ -526,6 +555,10 @@ function getCustomStatLines(customStats) {
 }
 
 function drawStatsBadge(context, width, height, cssToCanvasScale = 1) {
+  if (props.captureSettings.showOverlay === false) {
+    return;
+  }
+
   const customText = props.captureSettings.customText.trim();
   const rows = (getAllTimeStatsRows(props.activities) || []).filter((row) => props.captureSettings.statRows[row.key]);
   const statLines = [
@@ -689,6 +722,19 @@ function clamp(value, min, max) {
 <template>
   <section class="map-shell">
     <div ref="mapContainer" class="map-container"></div>
+    <div
+      v-if="!isCaptureMode && shouldShowCaptureStatsPreview"
+      class="capture-stats-preview map-stats-overlay"
+      :class="`is-${captureStatsPosition}`"
+      :style="{ '--capture-accent-color': routeColor }"
+      aria-hidden="true"
+    >
+      <p class="capture-stats-brand">DrawMyWay</p>
+      <p v-if="captureCustomText" class="capture-stats-text">{{ captureCustomText }}</p>
+      <div v-if="captureStatLines.length > 0" class="capture-stats-list">
+        <p v-for="line in captureStatLines" :key="line">{{ line }}</p>
+      </div>
+    </div>
     <div v-if="isCaptureMode" class="capture-overlay">
       <div ref="captureFrame" class="capture-frame" :class="`is-${activeCaptureFormat.id}`">
         <button
@@ -753,9 +799,9 @@ function clamp(value, min, max) {
       </div>
       <p v-if="snapshotError" class="capture-error">{{ snapshotError }}</p>
     </div>
-    <div v-if="isStyleLoading" class="map-loading" role="status">
+    <div v-if="isStyleLoading || isImportOverlayVisible" class="map-loading" role="status">
       <span class="map-loading-spinner"></span>
-      <span>Chargement du fond</span>
+      <span>{{ isImportOverlayVisible ? 'Import des traces…' : 'Chargement du fond' }}</span>
     </div>
   </section>
 </template>
@@ -809,8 +855,8 @@ function clamp(value, min, max) {
   position: absolute;
   top: 18px;
   right: 58px;
-  bottom: 18px;
-  left: 354px;
+  bottom: 96px;
+  left: 18px;
   border: 2px solid rgba(255, 255, 255, 0.92);
   border-radius: 8px;
   box-shadow:
@@ -821,25 +867,25 @@ function clamp(value, min, max) {
 .capture-frame.is-square,
 .capture-frame.is-story,
 .capture-frame.is-poster {
-  top: 50%;
+  top: calc(50% - 40px);
   bottom: auto;
-  left: calc(354px + (100vw - 412px) / 2);
+  left: 50%;
   right: auto;
   transform: translate(-50%, -50%);
 }
 
 .capture-frame.is-square {
-  width: min(calc(100vw - 412px), calc(100dvh - 36px));
+  width: min(calc(100vw - 36px), calc(100dvh - 170px));
   aspect-ratio: 1;
 }
 
 .capture-frame.is-story {
-  height: calc(100dvh - 36px);
+  height: calc(100dvh - 170px);
   aspect-ratio: 9 / 16;
 }
 
 .capture-frame.is-poster {
-  height: calc(100dvh - 36px);
+  height: calc(100dvh - 170px);
   aspect-ratio: 4 / 5;
 }
 
@@ -911,6 +957,10 @@ function clamp(value, min, max) {
   height: 100%;
   border-radius: 6px;
   object-fit: cover;
+}
+
+.map-stats-overlay {
+  z-index: 15;
 }
 
 .capture-stats-preview {
@@ -1057,7 +1107,7 @@ function clamp(value, min, max) {
 .capture-error {
   position: absolute;
   right: 72px;
-  bottom: 72px;
+  bottom: 110px;
   max-width: min(360px, calc(100vw - 36px));
   margin: 0;
   border-radius: 8px;
@@ -1074,7 +1124,7 @@ function clamp(value, min, max) {
   .capture-frame {
     top: max(8px, env(safe-area-inset-top));
     right: max(8px, env(safe-area-inset-right));
-    bottom: max(8px, env(safe-area-inset-bottom));
+    bottom: 84px;
     left: max(8px, env(safe-area-inset-left));
   }
 
@@ -1083,7 +1133,7 @@ function clamp(value, min, max) {
   .capture-frame.is-poster {
     top: max(8px, env(safe-area-inset-top));
     right: max(8px, env(safe-area-inset-right));
-    bottom: max(8px, env(safe-area-inset-bottom));
+    bottom: 84px;
     left: max(8px, env(safe-area-inset-left));
     width: auto;
     height: auto;
@@ -1180,7 +1230,7 @@ function clamp(value, min, max) {
   .maplibregl-ctrl-top-right {
     top: auto;
     right: max(10px, env(safe-area-inset-right));
-    bottom: max(10px, env(safe-area-inset-bottom));
+    bottom: max(88px, calc(env(safe-area-inset-bottom) + 78px));
   }
 
   .app-layout.is-capture-mode .maplibregl-ctrl-top-right {

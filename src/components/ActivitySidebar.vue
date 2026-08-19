@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { computed, ref } from 'vue';
 import RouteStylePanel from './RouteStylePanel.vue';
 import { CAPTURE_FORMATS, CAPTURE_STATS_POSITIONS } from '../config/capture';
@@ -71,9 +71,11 @@ const props = defineProps({
 });
 
 const emit = defineEmits([
+  'clear-activities',
   'connect-strava',
   'disconnect-strava',
   'import-gpx',
+  'import-strava-all',
   'import-strava-date-selection',
   'search-strava-date',
   'toggle-footprint-mode',
@@ -86,19 +88,49 @@ const emit = defineEmits([
   'update-route-render-mode',
 ]);
 
-const isMenuOpen = ref(false);
+const activePanel = ref('');
 const gpxInput = ref(null);
 const stravaDate = ref(new Date().toISOString().slice(0, 10));
 const selectedStravaActivityIds = ref([]);
 const stravaStats = computed(() => getAllTimeStatsRows(props.activities));
 const customStats = computed(() => normalizeCustomStats(props.captureSettings.customStats));
 const stravaDateActivities = computed(() => props.stravaDateSearch.activities || []);
+const isOverlayEnabled = computed(() => props.captureSettings.showOverlay !== false);
+const importBreakdown = computed(() => props.activities
+  .filter((activity) => activity.stats)
+  .map((activity) => ({
+    id: activity.id,
+    name: activity.name || activity.fileName || 'Import',
+    detail: [
+      `${Number(activity.stats.activityCount || 0).toLocaleString('fr-FR')} activité(s)`,
+      `${(Number(activity.stats.distanceMeters || 0) / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 1, minimumFractionDigits: 1 })} km`,
+      `${Math.round(Number(activity.stats.elevationGainMeters || 0)).toLocaleString('fr-FR')} m D+`,
+    ].join(' · '),
+  })));
+const displayedPanel = computed(() => activePanel.value);
+const isPanelOpen = computed(() => displayedPanel.value !== '');
+const panelTitle = computed(() => ({
+  import: 'Ajouter des traces',
+  stats: 'Statistiques',
+  style: 'Personnaliser la carte',
+}[displayedPanel.value] || ''));
+function togglePanel(name) {
+  activePanel.value = activePanel.value === name ? '' : name;
+}
+
+function closePanel() {
+  activePanel.value = '';
+}
 
 function updateCaptureSettings(partialSettings) {
   emit('update-capture-settings', {
     ...props.captureSettings,
     ...partialSettings,
   });
+}
+
+function toggleStatsOverlay() {
+  updateCaptureSettings({ showOverlay: !isOverlayEnabled.value });
 }
 
 function updateCaptureStatRow(key) {
@@ -129,6 +161,12 @@ function updateCaptureFormat(format) {
 
 function openGpxImport() {
   gpxInput.value?.click();
+}
+
+function clearActivities() {
+  if (window.confirm('Supprimer toutes les traces de la carte ?')) {
+    emit('clear-activities');
+  }
 }
 
 function importGpx(event) {
@@ -199,171 +237,183 @@ function formatActivityTime(activity) {
 </script>
 
 <template>
-  <button
-    class="mobile-menu-toggle"
-    :class="{ 'is-hidden': isMenuOpen }"
-    type="button"
-    :aria-expanded="isMenuOpen"
-    aria-label="Ouvrir le menu"
-    @click="isMenuOpen = true"
-  >
-    <svg aria-hidden="true" viewBox="0 0 24 24" class="tool-icon">
-      <path
-        d="M4 7h16M4 12h16M4 17h16"
-        fill="none"
-        stroke="currentColor"
-        stroke-linecap="round"
-        stroke-width="2"
-      />
-    </svg>
-  </button>
+  <a class="map-brand" href="#" title="Retour à l'accueil">
+    <span class="map-brand-dot" aria-hidden="true"></span>
+    DrawMyWay
+  </a>
 
-  <aside class="stats-card" :class="{ 'is-mobile-open': isMenuOpen }">
-    <div class="stats-card-content">
-      <header class="stats-card-header">
-        <div>
-          <h1>DrawMyWay</h1>
-          <p>La carte de tous vos chemins</p>
-        </div>
-        <button
-          class="mobile-menu-close"
-          type="button"
-          aria-label="Fermer le menu"
-          @click="isMenuOpen = false"
-        >
-          <svg aria-hidden="true" viewBox="0 0 24 24" class="tool-icon">
-            <path
-              d="M6 6l12 12M18 6 6 18"
-              fill="none"
-              stroke="currentColor"
-              stroke-linecap="round"
-              stroke-width="2"
-            />
-          </svg>
-        </button>
-      </header>
+  <input
+    ref="gpxInput"
+    class="visually-hidden"
+    type="file"
+    accept=".gpx,application/gpx+xml,application/xml,text/xml"
+    @change="importGpx"
+  />
 
-      <p v-if="isLoading" class="muted">Chargement des activités...</p>
-      <p v-else-if="!stravaStats" class="empty-state">Ajoute un GPX ou connecte Strava pour afficher tes statistiques.</p>
-
-      <section v-else-if="!isCaptureMode" class="stats-panel">
-        <h2>Toutes les activités</h2>
-        <div class="stats-metrics">
-          <article v-for="row in stravaStats" :key="row.key" class="stats-metric">
-            <strong>{{ row.value }}</strong>
-            <span>{{ row.label }}</span>
-          </article>
-        </div>
-      </section>
-
-      <section v-if="isCaptureMode" class="photo-settings">
-        <p class="photo-settings-title">Créer un visuel</p>
-
-        <div class="photo-format-control" role="group" aria-label="Format de l'image">
-          <span>Format</span>
-          <div class="photo-format-options">
-            <button
-              v-for="format in CAPTURE_FORMATS"
-              :key="format.id"
-              class="photo-format-button"
-              :class="{ 'is-selected': captureSettings.format === format.id }"
-              type="button"
-              :title="format.resolution"
-              @click="updateCaptureFormat(format.id)"
-            >
-              <span>{{ format.label }}</span>
-              <small>{{ format.resolution }}</small>
-            </button>
-          </div>
-        </div>
-
-        <div class="photo-stat-lines">
-          <label v-for="row in STATS_ROW_OPTIONS" :key="row.key" class="photo-toggle">
-            <input
-              type="checkbox"
-              :checked="captureSettings.statRows[row.key]"
-              @change="updateCaptureStatRow(row.key)"
-            />
-            <span>{{ row.label }}</span>
-          </label>
-        </div>
-
-        <label class="photo-text-field">
-          <span>Texte perso</span>
-          <input
-            type="text"
-            :maxlength="CUSTOM_TEXT_MAX_LENGTH"
-            :value="captureSettings.customText"
-            placeholder="Ex : Beaujolais 2026"
-            @input="updateCustomText"
-          />
-        </label>
-        <p class="photo-text-count">{{ captureSettings.customText.length }}/{{ CUSTOM_TEXT_MAX_LENGTH }}</p>
-
-        <div class="photo-custom-stats">
-          <span>Stats personnalisées</span>
-          <div
-            v-for="(stat, index) in customStats"
-            :key="index"
-            class="photo-custom-stat-row"
-          >
-            <input
-              type="text"
-              :maxlength="CUSTOM_STAT_MAX_LENGTH"
-              :value="stat.value"
-              placeholder="Ex : 1 470 km"
-              aria-label="Valeur personnalisée"
-              @input="updateCustomStat(index, 'value', $event)"
-            />
-            <input
-              type="text"
-              :maxlength="CUSTOM_STAT_MAX_LENGTH"
-              :value="stat.label"
-              placeholder="Ex : distance"
-              aria-label="Libellé personnalisé"
-              @input="updateCustomStat(index, 'label', $event)"
-            />
-          </div>
-        </div>
-
-        <div class="photo-placement" role="group" aria-label="Placement des informations">
-          <span>Placement des informations</span>
-          <div class="photo-placement-grid">
-            <button
-              v-for="position in CAPTURE_STATS_POSITIONS"
-              :key="position.id"
-              class="photo-placement-button"
-              :class="{ 'is-selected': captureStatsPosition === position.id }"
-              type="button"
-              :aria-label="position.label"
-              :aria-pressed="captureStatsPosition === position.id"
-              :title="position.label"
-              @click="emit('update-capture-stats-position', position.id)"
-            ></button>
-          </div>
-        </div>
-      </section>
-
-      <section v-if="!isCaptureMode" class="source-import-panel">
-        <p class="source-import-title">Ajouter des traces</p>
-        <input
-          ref="gpxInput"
-          class="visually-hidden"
-          type="file"
-          accept=".gpx,application/gpx+xml,application/xml,text/xml"
-          @change="importGpx"
+  <div class="map-bottom-bar">
+    <nav class="map-toolbar" aria-label="Outils de la carte">
+    <button
+      class="map-tool"
+      :class="{ 'is-active': displayedPanel === 'import' }"
+      type="button"
+      @click="togglePanel('import')"
+    >
+      <svg aria-hidden="true" viewBox="0 0 24 24" class="tool-icon">
+        <path
+          d="M12 3v10m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"
+          fill="none"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
         />
-        <button
-          class="gpx-import-button"
-          type="button"
-          :disabled="isImporting"
-          @click="openGpxImport"
-        >
-          Importer un GPX
-        </button>
+      </svg>
+      <span>Traces</span>
+    </button>
 
-        <section v-if="stravaStatus.connected" class="strava-date-import">
-          <p class="strava-date-title">Composer par date</p>
+    <button
+      class="map-tool"
+      :class="{ 'is-active': displayedPanel === 'stats' }"
+      type="button"
+      @click="togglePanel('stats')"
+    >
+      <svg aria-hidden="true" viewBox="0 0 24 24" class="tool-icon">
+        <path
+          d="M5 20V10m7 10V4m7 16v-7"
+          fill="none"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-width="2.4"
+        />
+      </svg>
+      <span>Stats</span>
+    </button>
+
+    <button
+      class="map-tool"
+      :class="{ 'is-active': displayedPanel === 'style' }"
+      type="button"
+      @click="togglePanel('style')"
+    >
+      <svg aria-hidden="true" viewBox="0 0 24 24" class="tool-icon">
+        <path
+          d="M18.4 3.6a2.1 2.1 0 0 1 3 3l-9.1 9.1-3-3 9.1-9.1Z"
+          fill="none"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+        />
+        <path
+          d="M8.7 13.3c-2.6.5-4.1 2-4.4 4.5-.1.8-.4 1.5-1 2.1 2.1.2 4.4-.2 5.8-1.6 1.1-1.1 1.5-2.7.9-4.1"
+          fill="none"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+        />
+      </svg>
+      <span>Style</span>
+    </button>
+
+    <span class="map-toolbar-separator" aria-hidden="true"></span>
+
+    <button
+      class="map-tool map-tool-photo"
+      :class="{ 'is-active': isCaptureMode }"
+      type="button"
+      :aria-pressed="isCaptureMode"
+      @click="emit('toggle-capture-mode')"
+    >
+      <svg aria-hidden="true" viewBox="0 0 24 24" class="tool-icon">
+        <path
+          d="M14.5 5 13 3H9L7.5 5H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-4.5Z"
+          fill="none"
+          stroke="currentColor"
+          stroke-linejoin="round"
+          stroke-width="2"
+        />
+        <circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="2" />
+      </svg>
+      <span>Photo</span>
+    </button>
+    </nav>
+
+    <div v-if="isCaptureMode" class="map-format-bar" role="group" aria-label="Format de l'image">
+      <button
+        v-for="format in CAPTURE_FORMATS"
+        :key="format.id"
+        class="map-format-chip"
+        :class="{ 'is-selected': captureSettings.format === format.id }"
+        type="button"
+        :title="format.resolution"
+        @click="updateCaptureFormat(format.id)"
+      >
+        <span>{{ format.label }}</span>
+        <small>{{ format.resolution }}</small>
+      </button>
+    </div>
+  </div>
+
+  <aside v-if="isPanelOpen" class="map-panel" :aria-label="panelTitle">
+    <header class="map-panel-header">
+      <h2>{{ panelTitle }}</h2>
+      <button
+        class="map-panel-close"
+        type="button"
+        aria-label="Fermer le panneau"
+        @click="closePanel"
+      >
+        <svg aria-hidden="true" viewBox="0 0 24 24" class="tool-icon">
+          <path
+            d="M6 6l12 12M18 6 6 18"
+            fill="none"
+            stroke="currentColor"
+            stroke-linecap="round"
+            stroke-width="2"
+          />
+        </svg>
+      </button>
+    </header>
+
+    <div class="map-panel-content">
+      <section v-if="displayedPanel === 'import'" class="source-import-panel">
+        <div class="import-buttons">
+          <button
+            v-if="!stravaStatus.connected"
+            class="strava-button"
+            type="button"
+            :disabled="isCheckingStrava"
+            @click="emit('connect-strava')"
+          >
+            {{ isCheckingStrava ? 'Vérification...' : 'Connecter Strava' }}
+          </button>
+          <button
+            v-else
+            class="strava-button"
+            type="button"
+            :disabled="isImporting"
+            @click="emit('import-strava-all')"
+          >
+            {{ isImporting ? 'Import...' : 'Tout importer' }}
+          </button>
+          <button
+            class="gpx-import-button"
+            type="button"
+            :disabled="isImporting"
+            @click="openGpxImport"
+          >
+            Importer un GPX
+          </button>
+        </div>
+
+        <p v-if="!stravaStatus.connected" class="muted">
+          Connecte Strava pour importer tout ton historique en un clic, ou dépose un fichier GPX.
+        </p>
+
+        <details v-if="stravaStatus.connected" class="style-section" open>
+          <summary>Composer par date</summary>
+          <div class="strava-date-import">
           <div class="strava-date-search">
             <input
               v-model="stravaDate"
@@ -410,17 +460,170 @@ function formatActivityTime(activity) {
               Importer la sélection
             </button>
           </div>
-        </section>
+          </div>
+        </details>
+
+        <footer v-if="stravaStatus.connected || activities.length > 0" class="strava-account">
+          <template v-if="stravaStatus.connected">
+            <p v-if="stravaStatus.athlete" class="account-status">
+              Synchronisé avec Strava · {{ stravaStatus.athlete.firstname }} {{ stravaStatus.athlete.lastname }}
+            </p>
+            <p v-else class="account-status">Synchronisé avec Strava</p>
+            <button
+              class="disconnect-button"
+              type="button"
+              :disabled="isImporting"
+              @click="emit('disconnect-strava')"
+            >
+              Déconnecter et tout vider
+            </button>
+            <p class="disconnect-hint">
+              Supprime la connexion Strava et toutes les traces de la carte, imports GPX compris.
+            </p>
+          </template>
+
+          <button
+            v-if="activities.length > 0"
+            class="disconnect-button"
+            type="button"
+            :disabled="isImporting"
+            @click="clearActivities"
+          >
+            Vider la carte
+          </button>
+          <p v-if="activities.length > 0 && !stravaStatus.connected" class="disconnect-hint">
+            Supprime toutes les traces importées, sans toucher à la connexion Strava.
+          </p>
+        </footer>
+      </section>
+
+      <section v-else-if="displayedPanel === 'stats'" class="stats-panel">
+        <p v-if="isLoading" class="muted">Chargement des activités...</p>
+        <p v-else-if="!stravaStats" class="empty-state">
+          Ajoute un GPX ou connecte Strava pour afficher tes statistiques.
+        </p>
+        <template v-else>
+          <details class="style-section" open>
+            <summary>Totaux</summary>
+            <div class="stats-metrics">
+              <article v-for="row in stravaStats" :key="row.key" class="stats-metric">
+                <strong>{{ row.value }}</strong>
+                <span>{{ row.label }}</span>
+              </article>
+            </div>
+          </details>
+
+          <details v-if="importBreakdown.length > 1" class="style-section">
+            <summary>Par import</summary>
+            <div class="import-breakdown">
+              <article
+                v-for="item in importBreakdown"
+                :key="item.id"
+                class="import-breakdown-row"
+              >
+                <strong>{{ item.name }}</strong>
+                <small>{{ item.detail }}</small>
+              </article>
+            </div>
+          </details>
+
+          <details class="style-section" open>
+            <summary>Badge sur la carte</summary>
+            <label class="photo-toggle">
+              <input
+                type="checkbox"
+                :checked="isOverlayEnabled"
+                @change="toggleStatsOverlay"
+              />
+              <span>Afficher le badge de stats</span>
+            </label>
+
+            <div class="photo-stat-lines">
+              <label v-for="row in STATS_ROW_OPTIONS" :key="row.key" class="photo-toggle">
+                <input
+                  type="checkbox"
+                  :checked="captureSettings.statRows[row.key]"
+                  :disabled="!isOverlayEnabled"
+                  @change="updateCaptureStatRow(row.key)"
+                />
+                <span>{{ row.label }}</span>
+              </label>
+            </div>
+          </details>
+
+          <details class="style-section">
+            <summary>Texte &amp; stats perso</summary>
+            <div>
+              <label class="photo-text-field">
+                <span>Texte perso</span>
+                <input
+                  type="text"
+                  :maxlength="CUSTOM_TEXT_MAX_LENGTH"
+                  :value="captureSettings.customText"
+                  :disabled="!isOverlayEnabled"
+                  placeholder="Ex : Beaujolais 2026"
+                  @input="updateCustomText"
+                />
+              </label>
+              <p class="photo-text-count">{{ captureSettings.customText.length }}/{{ CUSTOM_TEXT_MAX_LENGTH }}</p>
+            </div>
+
+            <div class="photo-custom-stats">
+              <span>Stats personnalisées</span>
+              <div
+                v-for="(stat, index) in customStats"
+                :key="index"
+                class="photo-custom-stat-row"
+              >
+                <input
+                  type="text"
+                  :maxlength="CUSTOM_STAT_MAX_LENGTH"
+                  :value="stat.value"
+                  :disabled="!isOverlayEnabled"
+                  placeholder="Ex : 1 470 km"
+                  aria-label="Valeur personnalisée"
+                  @input="updateCustomStat(index, 'value', $event)"
+                />
+                <input
+                  type="text"
+                  :maxlength="CUSTOM_STAT_MAX_LENGTH"
+                  :value="stat.label"
+                  :disabled="!isOverlayEnabled"
+                  placeholder="Ex : distance"
+                  aria-label="Libellé personnalisé"
+                  @input="updateCustomStat(index, 'label', $event)"
+                />
+              </div>
+            </div>
+          </details>
+
+          <details class="style-section">
+            <summary>Emplacement du badge</summary>
+            <div class="photo-placement-grid" role="group" aria-label="Placement du badge">
+              <button
+                v-for="position in CAPTURE_STATS_POSITIONS"
+                :key="position.id"
+                class="photo-placement-button"
+                :class="{ 'is-selected': captureStatsPosition === position.id }"
+                type="button"
+                :disabled="!isOverlayEnabled"
+                :aria-label="position.label"
+                :aria-pressed="captureStatsPosition === position.id"
+                :title="position.label"
+                @click="emit('update-capture-stats-position', position.id)"
+              ></button>
+            </div>
+          </details>
+        </template>
       </section>
 
       <RouteStylePanel
-        :is-capture-mode="isCaptureMode"
+        v-else-if="displayedPanel === 'style'"
         :is-footprint-mode="isFootprintMode"
         :map-style-id="mapStyleId"
         :model-value="routeColor"
         :route-opacity="routeOpacity"
         :route-render-mode="routeRenderMode"
-        @toggle-capture-mode="emit('toggle-capture-mode')"
         @toggle-footprint-mode="emit('toggle-footprint-mode')"
         @update-map-style="emit('update-map-style', $event)"
         @update:model-value="emit('update-route-color', $event)"
@@ -428,66 +631,223 @@ function formatActivityTime(activity) {
         @update-route-render-mode="emit('update-route-render-mode', $event)"
       />
 
-      <footer class="strava-account">
-        <template v-if="stravaStatus.connected">
-          <p v-if="stravaStatus.athlete" class="account-status">
-            Synchronisé avec Strava · {{ stravaStatus.athlete.firstname }} {{ stravaStatus.athlete.lastname }}
-          </p>
-          <p v-else class="account-status">Synchronisé avec Strava</p>
-          <button
-            class="disconnect-button"
-            type="button"
-            :disabled="isImporting"
-            @click="emit('disconnect-strava')"
-          >
-            Déconnecter Strava
-          </button>
-        </template>
-
-        <button
-          v-else
-          class="strava-button"
-          type="button"
-          :disabled="isCheckingStrava"
-          @click="emit('connect-strava')"
-        >
-          {{ isCheckingStrava ? 'Vérification...' : 'Connecter Strava' }}
-        </button>
-      </footer>
     </div>
   </aside>
 </template>
 
 
 <style lang="scss">
-.mobile-menu-toggle,
-.mobile-menu-close {
+.map-brand {
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  z-index: 25;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  border-radius: 999px;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.94);
+  color: $ink;
+  font-size: 0.88rem;
+  font-weight: 900;
+  text-decoration: none;
+  box-shadow: 0 12px 30px rgba(31, 41, 51, 0.18);
+  backdrop-filter: blur(12px) saturate(145%);
+  -webkit-backdrop-filter: blur(12px) saturate(145%);
+}
+
+.map-brand-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: $brand;
+}
+
+.map-bottom-bar {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  z-index: 26;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 24px);
+  overflow-x: auto;
+  scrollbar-width: none;
+  transform: translateX(-50%);
+}
+
+.map-bottom-bar::-webkit-scrollbar {
   display: none;
 }
 
-.stats-card {
-  position: fixed;
-  top: 18px;
-  left: 18px;
-  z-index: 20;
-  width: min(320px, calc(100vw - 36px));
-  max-height: calc(100dvh - 36px);
-  min-width: 0;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.58);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 18px 45px rgba(31, 41, 51, 0.2);
+.map-toolbar,
+.map-format-bar {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  border-radius: 999px;
+  padding: 7px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 18px 44px rgba(31, 41, 51, 0.24);
   backdrop-filter: blur(14px) saturate(145%);
   -webkit-backdrop-filter: blur(14px) saturate(145%);
 }
 
-.stats-card-content {
+.map-format-bar {
+  animation: map-panel-in 0.18s ease;
+}
+
+.map-format-chip {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  border-radius: 999px;
+  padding: 7px 12px;
+  background: transparent;
+  color: $ink;
+  font-size: 0.68rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.map-format-chip small {
+  color: $slate-soft;
+  font-size: 0.56rem;
+  font-weight: 750;
+}
+
+.map-format-chip:hover {
+  background: rgba(23, 33, 43, 0.07);
+}
+
+.map-format-chip.is-selected {
+  background: $ink;
+  color: #ffffff;
+}
+
+.map-format-chip.is-selected small {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.map-tool {
+  display: grid;
+  min-width: 64px;
+  justify-items: center;
+  gap: 3px;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: transparent;
+  color: $ink;
+  font-size: 0.66rem;
+  font-weight: 850;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.map-tool .tool-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.map-tool:hover {
+  background: rgba(23, 33, 43, 0.07);
+}
+
+.map-tool.is-active {
+  background: $ink;
+  color: #ffffff;
+}
+
+.map-tool-photo {
+  color: $brand;
+}
+
+.map-tool-photo.is-active {
+  background: $brand;
+  color: #ffffff;
+}
+
+.map-toolbar-separator {
+  align-self: center;
+  width: 1px;
+  height: 30px;
+  margin: 0 5px;
+  background: rgba(127, 140, 153, 0.32);
+}
+
+.map-panel {
+  position: fixed;
+  top: 72px;
+  left: 14px;
+  z-index: 25;
   display: flex;
+  width: min(310px, calc(100vw - 28px));
+  max-height: min(540px, calc(100dvh - 180px));
   flex-direction: column;
-  min-width: 0;
-  max-height: calc(100dvh - 36px);
-  padding: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.62);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 18px 45px rgba(31, 41, 51, 0.22);
+  backdrop-filter: blur(14px) saturate(145%);
+  -webkit-backdrop-filter: blur(14px) saturate(145%);
+  animation: map-panel-in 0.18s ease;
+}
+
+@keyframes map-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.map-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 0 0 auto;
+  border-bottom: 1px solid rgba(127, 140, 153, 0.24);
+  padding: 13px 16px;
+}
+
+.map-panel-header h2 {
+  margin: 0;
+  color: $ink-deep;
+  font-size: 0.95rem;
+  line-height: 1.2;
+}
+
+.map-panel-close {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
+  background: rgba(23, 33, 43, 0.06);
+  color: $ink;
+}
+
+.map-panel-close .tool-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.map-panel-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 14px 16px 16px;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -495,52 +855,15 @@ function formatActivityTime(activity) {
   scrollbar-color: #aab1b8 transparent;
 }
 
-.stats-card-content::-webkit-scrollbar {
+.map-panel-content::-webkit-scrollbar {
   width: 8px;
 }
 
-.stats-card-content::-webkit-scrollbar-thumb {
+.map-panel-content::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 999px;
   background: rgba(127, 140, 153, 0.48);
   background-clip: content-box;
-}
-
-.stats-card-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 14px;
-  border-bottom: 1px solid rgba(127, 140, 153, 0.35);
-  padding-bottom: 14px;
-}
-
-.stats-card-header h1::after {
-  display: block;
-  width: 64px;
-  height: 3px;
-  margin-top: 7px;
-  border-radius: 999px;
-  background: $brand;
-  content: "";
-}
-
-.stats-card-header p {
-  margin: 9px 0 0;
-  color: $slate-soft;
-  font-size: 0.82rem;
-  font-weight: 700;
-  line-height: 1.25;
-}
-
-.eyebrow {
-  margin: 0 0 4px;
-  color: $slate-soft;
-  font-size: 0.76rem;
-  font-weight: 700;
-  letter-spacing: 0;
-  text-transform: uppercase;
 }
 
 .muted,
@@ -551,240 +874,41 @@ function formatActivityTime(activity) {
   line-height: 1.35;
 }
 
-.strava-button {
-  width: 100%;
-  padding: 11px 14px;
-  background: $strava;
-  color: #ffffff;
-  font-weight: 800;
-}
-
-.disconnect-button {
-  width: auto;
-  margin-top: 8px;
-  padding: 0;
-  background: transparent;
-  color: $slate-soft;
-  font-size: 0.78rem;
-  font-weight: 800;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.stats-panel {
-  margin-bottom: 14px;
-  border-bottom: 1px solid rgba(127, 140, 153, 0.35);
-  background: transparent;
-}
-
-.photo-settings {
-  margin-bottom: 14px;
-  border-bottom: 1px solid rgba(127, 140, 153, 0.35);
-  padding-bottom: 14px;
-}
-
-.photo-settings-title {
-  margin: 0 0 10px;
-  color: $ink;
-  font-size: 0.76rem;
-  font-weight: 850;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.photo-format-control {
-  display: grid;
-  gap: 7px;
-  margin-bottom: 12px;
-  color: $ink;
-  font-size: 0.82rem;
-  font-weight: 800;
-}
-
-.photo-format-options {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.photo-format-button {
-  display: grid;
-  min-height: 42px;
-  place-items: center;
-  border: 1px solid rgba(127, 140, 153, 0.28);
-  border-radius: 6px;
-  padding: 6px 8px;
-  background: rgba(255, 255, 255, 0.96);
-  color: $ink;
-  font-size: 0.78rem;
-  font-weight: 850;
-  line-height: 1.15;
-}
-
-.photo-format-button small {
-  color: $slate-soft;
-  font-size: 0.64rem;
-  font-weight: 750;
-}
-
-.photo-format-button.is-selected {
-  background: $ink;
-  color: #ffffff;
-}
-
-.photo-format-button.is-selected small {
-  color: rgba(255, 255, 255, 0.74);
-}
-
-.photo-toggle {
-  display: flex;
-  min-height: 26px;
-  align-items: center;
-  gap: 9px;
-  color: $ink;
-  font-size: 0.82rem;
-  font-weight: 750;
-}
-
-.photo-toggle input {
-  width: 16px;
-  height: 16px;
-  flex: 0 0 auto;
-  accent-color: $ink;
-}
-
-.photo-stat-lines {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 4px 8px;
-  margin-top: 10px;
-}
-
-.photo-text-field {
-  display: grid;
-  gap: 6px;
-  margin-top: 10px;
-  color: $ink;
-  font-size: 0.82rem;
-  font-weight: 750;
-}
-
-.photo-text-field input {
-  width: 100%;
-  min-height: 36px;
-  border: 1px solid rgba(127, 140, 153, 0.28);
-  border-radius: 6px;
-  padding: 8px 10px;
-  background: #ffffff;
-  color: $ink;
-  font: inherit;
-  font-weight: 650;
-}
-
-.photo-text-count {
-  margin: 5px 0 0;
-  color: $slate-soft;
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-align: right;
-}
-
-.photo-custom-stats {
-  display: grid;
-  gap: 7px;
-  margin-top: 10px;
-  color: $ink;
-  font-size: 0.82rem;
-  font-weight: 750;
-}
-
-.photo-custom-stat-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 6px;
-}
-
-.photo-custom-stat-row input {
-  width: 100%;
-  min-height: 34px;
-  border: 1px solid rgba(127, 140, 153, 0.28);
-  border-radius: 6px;
-  padding: 7px 8px;
-  background: #ffffff;
-  color: $ink;
-  font: inherit;
-  font-size: 0.78rem;
-  font-weight: 650;
-}
-
-.photo-placement {
-  display: grid;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.photo-placement span {
-  color: $ink;
-  font-size: 0.82rem;
-  font-weight: 850;
-}
-
-.photo-placement-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 18px);
-  gap: 8px;
-}
-
-.photo-placement-button {
-  width: 18px;
-  height: 18px;
-  border: 1px solid rgba(252, 76, 2, 0.68);
-  border-radius: 3px;
-  background: rgba(255, 221, 132, 0.68);
-}
-
-.photo-placement-button.is-selected {
-  background: $strava;
-  box-shadow:
-    0 0 0 2px #ffffff,
-    0 0 0 4px rgba(252, 76, 2, 0.38);
-}
+// --- Panneau "Ajouter des traces" ---
 
 .source-import-panel {
   display: grid;
-  gap: 10px;
-  margin-bottom: 14px;
-  border-bottom: 1px solid rgba(127, 140, 153, 0.35);
-  padding-bottom: 14px;
+  gap: 12px;
 }
 
-.source-import-title {
-  margin: 0;
-  color: $ink;
-  font-size: 0.76rem;
+.import-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.strava-button {
+  min-height: 42px;
+  padding: 10px 12px;
+  background: $strava;
+  color: #ffffff;
+  font-size: 0.82rem;
   font-weight: 850;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 
-.strava-account {
-  margin-top: 2px;
+.gpx-import-button {
+  min-height: 42px;
+  border: 1px solid $border-soft;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.9);
+  color: $ink;
+  font-size: 0.82rem;
+  font-weight: 850;
 }
 
 .strava-date-import {
   display: grid;
   gap: 8px;
-  border-top: 1px solid rgba(127, 140, 153, 0.22);
-  padding-top: 10px;
-}
-
-.strava-date-title {
-  margin: 0;
-  color: $ink;
-  font-size: 0.76rem;
-  font-weight: 850;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
 }
 
 .strava-date-search {
@@ -890,14 +1014,9 @@ function formatActivityTime(activity) {
   font-weight: 850;
 }
 
-.gpx-import-button {
-  width: 100%;
-  min-height: 38px;
-  border: 1px solid $border-soft;
-  background: rgba(255, 255, 255, 0.9);
-  color: $ink;
-  font-size: 0.82rem;
-  font-weight: 850;
+.strava-account {
+  border-top: 1px solid rgba(127, 140, 153, 0.22);
+  padding-top: 12px;
 }
 
 .account-status {
@@ -908,20 +1027,67 @@ function formatActivityTime(activity) {
   line-height: 1.35;
 }
 
-.stats-panel h2 {
-  margin: 0;
-  padding: 10px 0 4px;
+.disconnect-button {
+  width: auto;
+  margin-top: 8px;
+  padding: 0;
   background: transparent;
-  color: $ink-deep;
-  font-size: 0.95rem;
-  line-height: 1.2;
+  color: $slate-soft;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+// --- Panneau "Statistiques" ---
+
+.import-breakdown {
+  display: grid;
+  gap: 7px;
+}
+
+.import-breakdown-row {
+  border: 1px solid rgba(127, 140, 153, 0.18);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.import-breakdown-row strong,
+.import-breakdown-row small {
+  display: block;
+  min-width: 0;
+}
+
+.import-breakdown-row strong {
+  overflow: hidden;
+  color: $ink;
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-breakdown-row small {
+  margin-top: 3px;
+  color: $slate-soft;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.disconnect-hint {
+  margin: 6px 0 0;
+  color: $slate-soft;
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1.4;
 }
 
 .stats-metrics {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px 18px;
-  padding: 8px 0 4px;
+  padding: 4px 0;
 }
 
 .stats-metric {
@@ -951,121 +1117,159 @@ function formatActivityTime(activity) {
   text-transform: uppercase;
 }
 
+// --- Réglages du badge de stats ---
+
+.photo-toggle {
+  display: flex;
+  min-height: 26px;
+  align-items: center;
+  gap: 9px;
+  color: $ink;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.photo-toggle input {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  accent-color: $ink;
+}
+
+.photo-stat-lines {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 8px;
+  margin-top: 10px;
+}
+
+.photo-text-field {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  color: $ink;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.photo-text-field input {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid rgba(127, 140, 153, 0.28);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #ffffff;
+  color: $ink;
+  font: inherit;
+  font-weight: 650;
+}
+
+.photo-text-count {
+  margin: 5px 0 0;
+  color: $slate-soft;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: right;
+}
+
+.photo-custom-stats {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+  color: $ink;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.photo-custom-stat-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
+}
+
+.photo-custom-stat-row input {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(127, 140, 153, 0.28);
+  border-radius: 6px;
+  padding: 7px 8px;
+  background: #ffffff;
+  color: $ink;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.photo-placement-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 18px);
+  gap: 8px;
+}
+
+.photo-placement-button {
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(252, 76, 2, 0.68);
+  border-radius: 3px;
+  background: rgba(255, 221, 132, 0.68);
+}
+
+.photo-placement-button.is-selected {
+  background: $strava;
+  box-shadow:
+    0 0 0 2px #ffffff,
+    0 0 0 4px rgba(252, 76, 2, 0.38);
+}
+
 @media (max-width: 760px) {
-  .mobile-menu-toggle {
-    position: fixed;
+  .map-brand {
     top: max(10px, env(safe-area-inset-top));
     left: max(10px, env(safe-area-inset-left));
-    z-index: 30;
-    display: grid;
-    width: 46px;
-    height: 46px;
-    place-items: center;
-    border: 1px solid rgba(255, 255, 255, 0.62);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.94);
-    color: $ink;
-    box-shadow: 0 12px 30px rgba(31, 41, 51, 0.2);
-    backdrop-filter: blur(12px) saturate(145%);
-    -webkit-backdrop-filter: blur(12px) saturate(145%);
-  }
-
-  .mobile-menu-toggle.is-hidden {
-    opacity: 0;
-    pointer-events: none;
-    transform: translateY(-6px);
-  }
-
-  .stats-card {
-    top: max(10px, env(safe-area-inset-top));
-    right: max(10px, env(safe-area-inset-right));
-    left: max(10px, env(safe-area-inset-left));
-    width: auto;
-    max-height: min(62dvh, 520px);
-    opacity: 0;
-    pointer-events: none;
-    transform: translateY(-8px);
-    transition:
-      opacity 0.18s ease,
-      transform 0.18s ease,
-      visibility 0.18s ease;
-    visibility: hidden;
-  }
-
-  .app-layout.is-capture-mode .stats-card,
-  .app-layout.is-capture-mode .stats-card-content {
-    max-height: calc(100dvh - 20px);
-  }
-
-  .stats-card.is-mobile-open {
-    opacity: 1;
-    pointer-events: auto;
-    transform: translateY(0);
-    visibility: visible;
-  }
-
-  .stats-card-content {
-    max-height: min(62dvh, 520px);
-    padding: 12px;
-  }
-
-  .stats-card-header {
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 10px;
-    padding-bottom: 10px;
-  }
-
-  .mobile-menu-close {
-    display: grid;
-    width: 38px;
-    height: 38px;
-    flex: 0 0 auto;
-    place-items: center;
-    background: #ffffff;
-    color: $ink;
-  }
-
-  .eyebrow {
-    font-size: 0.68rem;
-  }
-
-  h1 {
-    font-size: 1.36rem;
-  }
-
-  .muted,
-  .empty-state {
-    font-size: 0.82rem;
-  }
-
-  .stats-panel {
-    margin-bottom: 10px;
-  }
-
-  .photo-settings {
-    margin-bottom: 10px;
-    padding-bottom: 10px;
-  }
-
-  .photo-settings-title {
-    margin-bottom: 8px;
+    padding: 8px 13px;
     font-size: 0.8rem;
   }
 
-  .photo-format-control {
-    margin-bottom: 10px;
-    font-size: 0.78rem;
+  .map-bottom-bar {
+    bottom: max(10px, env(safe-area-inset-bottom));
   }
 
-  .photo-format-button {
-    min-height: 38px;
-    padding: 5px 6px;
-    font-size: 0.74rem;
+  .map-format-chip {
+    padding: 6px 9px;
+    font-size: 0.6rem;
   }
 
-  .photo-format-button small {
-    font-size: 0.58rem;
+  .map-tool {
+    min-width: 56px;
+    padding: 7px 9px;
+    font-size: 0.6rem;
+  }
+
+  .map-panel {
+    top: max(64px, calc(env(safe-area-inset-top) + 54px));
+    right: max(10px, env(safe-area-inset-right));
+    left: max(10px, env(safe-area-inset-left));
+    width: auto;
+    max-height: calc(100dvh - 160px);
+  }
+
+  .map-panel-content {
+    padding: 12px;
+  }
+
+  .stats-metrics {
+    gap: 12px 14px;
+  }
+
+  .stats-metric strong {
+    font-size: 1rem;
+  }
+
+  .stats-metric span {
+    font-size: 0.62rem;
+  }
+
+  .account-status {
+    font-size: 0.8rem;
   }
 
   .photo-toggle {
@@ -1086,58 +1290,6 @@ function formatActivityTime(activity) {
   .photo-custom-stat-row input {
     min-height: 32px;
     font-size: 0.74rem;
-  }
-
-  .stats-panel h2 {
-    padding: 8px 0;
-    font-size: 0.86rem;
-  }
-
-  .stats-metrics {
-    gap: 12px 14px;
-    padding-top: 6px;
-  }
-
-  .stats-metric strong {
-    font-size: 1rem;
-  }
-
-  .stats-metric span {
-    font-size: 0.62rem;
-  }
-
-  .account-status {
-    font-size: 0.8rem;
-  }
-
-  .strava-button,
-  .disconnect-button {
-    min-height: 38px;
-    padding: 8px 10px;
-    font-size: 0.84rem;
-  }
-
-  .disconnect-button {
-    min-height: 0;
-    padding: 0;
-    font-size: 0.76rem;
-  }
-}
-
-@media (max-width: 380px) {
-  .stats-card {
-    max-height: min(68dvh, 540px);
-  }
-
-  .stats-card-content {
-    max-height: min(68dvh, 540px);
-  }
-}
-
-@media (max-width: 760px) and (max-height: 640px) {
-  .stats-card,
-  .stats-card-content {
-    max-height: calc(100dvh - 20px);
   }
 }
 </style>

@@ -73,9 +73,20 @@ function parsePointNodes(nodes) {
       return;
     }
 
+    let elevationText = null;
+    let timeText = null;
+
+    for (let child = point.firstElementChild; child; child = child.nextElementSibling) {
+      if (child.tagName === 'ele') {
+        elevationText = child.textContent;
+      } else if (child.tagName === 'time') {
+        timeText = child.textContent;
+      }
+    }
+
     coordinates.push([lon, lat]);
-    elevations.push(readNumber(point.querySelector('ele')?.textContent));
-    times.push(readTimestamp(point.querySelector('time')?.textContent));
+    elevations.push(elevationText === null ? null : readNumber(elevationText));
+    times.push(timeText === null ? null : readTimestamp(timeText));
   });
 
   return { coordinates, elevations, times };

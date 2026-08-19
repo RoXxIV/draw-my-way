@@ -19,6 +19,7 @@ const DEFAULT_ROUTE_RENDER_MODE = 'solid';
 const DEFAULT_ROUTE_OPACITY = 0.95;
 const DEFAULT_CAPTURE_SETTINGS = {
   format: DEFAULT_CAPTURE_FORMAT,
+  showOverlay: true,
   customText: '',
   customStats: [
     { value: '', label: '' },
@@ -236,9 +237,11 @@ onBeforeUnmount(() => {
       :route-render-mode="routeRenderMode"
       :strava-date-search="stravaDateSearch"
       :strava-status="stravaStatus"
+      @clear-activities="removeAllActivities"
       @connect-strava="connectStrava"
       @disconnect-strava="handleDisconnectStrava"
       @import-gpx="importGpxFile"
+      @import-strava-all="importStravaActivities"
       @import-strava-date-selection="importStravaDateSelection"
       @search-strava-date="searchStravaActivitiesByDate"
       @toggle-capture-mode="toggleCaptureMode"
@@ -258,6 +261,7 @@ onBeforeUnmount(() => {
         :capture-stats-position="captureStatsPosition"
         :is-capture-mode="isCaptureMode"
         :is-footprint-mode="isFootprintMode"
+        :is-importing="isImporting"
         :map-style-id="mapStyleId"
         :route-color="routeColor"
         :route-opacity="routeOpacity"
@@ -424,7 +428,7 @@ onBeforeUnmount(() => {
 @media (max-width: 760px) {
   .status-panel {
     right: max(10px, env(safe-area-inset-right));
-    bottom: max(10px, env(safe-area-inset-bottom));
+    bottom: max(88px, calc(env(safe-area-inset-bottom) + 78px));
     left: max(10px, env(safe-area-inset-left));
     width: auto;
   }

@@ -114,6 +114,8 @@ export function useActivities() {
     isImporting.value = true;
 
     try {
+      // Laisse le navigateur peindre le voile de chargement avant le parsing synchrone du GPX.
+      await waitForPaint();
       const activity = withVisibleFlag(await parseGpxFile(file));
       await upsertActivity(activity);
       activities.value = [activity, ...activities.value.filter((item) => item.id !== activity.id)];
@@ -235,6 +237,12 @@ export function useActivities() {
 
 function withVisibleFlag(activity) {
   return { ...activity, visible: activity.visible !== false };
+}
+
+function waitForPaint() {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  });
 }
 
 function mergeStravaSelectionActivity(currentActivities, importedActivity) {
