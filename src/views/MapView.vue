@@ -651,6 +651,20 @@ function clearSnapshot() {
   snapshotError.value = '';
 }
 
+async function captureAndDownload() {
+  await captureMapImage();
+
+  if (!snapshotUrl.value) {
+    return;
+  }
+
+  const link = document.createElement('a');
+  link.href = snapshotUrl.value;
+  link.download = captureDownloadName.value;
+  link.click();
+  clearSnapshot();
+}
+
 function loadImage(source) {
   return new Promise((resolve, reject) => {
     const image = new Image();
@@ -755,14 +769,8 @@ function clamp(value, min, max) {
           </svg>
         </button>
         <span class="capture-resolution">{{ activeCaptureFormat.resolution }}</span>
-        <img
-          v-if="snapshotUrl"
-          class="capture-preview"
-          :src="snapshotUrl"
-          alt="Aperçu de la capture DrawMyWay"
-        />
         <div
-          v-if="shouldShowCaptureStatsPreview && !snapshotUrl"
+          v-if="shouldShowCaptureStatsPreview"
           class="capture-stats-preview"
           :class="`is-${captureStatsPosition}`"
           :style="{ '--capture-accent-color': routeColor }"
@@ -776,25 +784,31 @@ function clamp(value, min, max) {
         </div>
         <div class="capture-actions">
           <button
-            v-if="!snapshotUrl"
-            class="capture-button"
+            class="capture-download"
             type="button"
             :disabled="isCapturing"
-            @click="captureMapImage"
+            @click="captureAndDownload"
           >
-            {{ isCapturing ? 'Capture...' : 'Capturer' }}
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <path
+                d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Z"
+                fill="none"
+                stroke="currentColor"
+                stroke-linejoin="round"
+                stroke-width="2"
+              />
+              <circle cx="9" cy="10" r="1.6" fill="currentColor" />
+              <path
+                d="m5.5 17 4.2-4.4 3 3 2.6-2.6 3.2 3.4"
+                fill="none"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+              />
+            </svg>
+            <span>{{ isCapturing ? 'Préparation…' : "Télécharger l'image" }}</span>
           </button>
-          <button v-else class="capture-button" type="button" @click="clearSnapshot">
-            Réajuster
-          </button>
-          <a
-            v-if="snapshotUrl"
-            class="capture-download"
-            :href="snapshotUrl"
-            :download="captureDownloadName"
-          >
-            Télécharger l'image
-          </a>
         </div>
       </div>
       <p v-if="snapshotError" class="capture-error">{{ snapshotError }}</p>
@@ -950,15 +964,6 @@ function clamp(value, min, max) {
   border-bottom-right-radius: 8px;
 }
 
-.capture-preview {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  border-radius: 6px;
-  object-fit: cover;
-}
-
 .map-stats-overlay {
   z-index: 15;
 }
@@ -1081,27 +1086,31 @@ function clamp(value, min, max) {
   pointer-events: auto;
 }
 
-.capture-button,
 .capture-download {
   display: inline-flex;
-  min-height: 38px;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  padding: 9px 12px;
+  gap: 4px;
+  border-radius: 16px;
+  padding: 10px 18px;
   background: rgba(255, 255, 255, 0.96);
   color: $ink;
-  font-size: 0.86rem;
+  font-size: 0.76rem;
   font-weight: 850;
-  text-decoration: none;
-  box-shadow: 0 12px 28px rgba(31, 41, 51, 0.18);
+  letter-spacing: 0.02em;
+  box-shadow: 0 14px 32px rgba(31, 41, 51, 0.24);
   backdrop-filter: blur(12px) saturate(145%);
   -webkit-backdrop-filter: blur(12px) saturate(145%);
+  transition: transform 0.16s ease;
 }
 
-.capture-download {
-  background: $ink;
-  color: #ffffff;
+.capture-download:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.capture-download svg {
+  width: 20px;
+  height: 20px;
 }
 
 .capture-error {
@@ -1212,12 +1221,10 @@ function clamp(value, min, max) {
     left: max(10px, env(safe-area-inset-left));
   }
 
-  .capture-button,
   .capture-download {
     flex: 1 1 0;
-    min-height: 36px;
-    padding: 8px 10px;
-    font-size: 0.82rem;
+    padding: 8px 12px;
+    font-size: 0.72rem;
   }
 
   .capture-error {

@@ -144,6 +144,19 @@ function createWaypointAnimation() {
       },
     });
 
+    gsap.from('.waypoint-illustration', {
+      opacity: 0,
+      y: 26,
+      scale: 0.96,
+      duration: 1.1,
+      ease: 'power2.out',
+      scrollTrigger: {
+        scroller: root.value,
+        trigger: '.waypoint-illustration',
+        start: 'top 85%',
+      },
+    });
+
     gsap.from('.closing-panel', {
       y: 44,
       opacity: 0,
@@ -266,6 +279,13 @@ onBeforeUnmount(() => {
         </div>
 
         <div ref="waypointStage" class="waypoint-stage">
+          <img
+            class="waypoint-illustration"
+            src="/img/mountain.png"
+            alt=""
+            aria-hidden="true"
+            loading="lazy"
+          />
           <svg ref="waypointCanvas" class="waypoint-canvas" aria-hidden="true">
             <path
               class="waypoint-guide"
@@ -289,7 +309,13 @@ onBeforeUnmount(() => {
             <p class="home-eyebrow">{{ step.eyebrow }}</p>
             <h3>{{ step.title }}</h3>
             <p v-html="step.description"></p>
-            <span class="waypoint-card-meta">{{ step.meta }}</span>
+            <button
+              class="waypoint-card-meta"
+              type="button"
+              @click="emit('open-app')"
+            >
+              {{ step.meta }}
+            </button>
           </article>
         </div>
       </section>
@@ -437,6 +463,17 @@ onBeforeUnmount(() => {
   overflow: visible;
 }
 
+.waypoint-illustration {
+  position: absolute;
+  top: 30%;
+  left: 3%;
+  width: min(300px, 26vw);
+  height: auto;
+  opacity: 0.92;
+  pointer-events: none;
+  user-select: none;
+}
+
 .waypoint-guide,
 .waypoint-route {
   fill: none;
@@ -565,6 +602,8 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
   margin-top: 6px;
+  padding: 0;
+  background: transparent;
   color: $brand;
   font-size: 0.78rem;
   font-weight: 900;
@@ -575,6 +614,15 @@ onBeforeUnmount(() => {
 .waypoint-card-meta::after {
   content: "→";
   font-size: 0.9rem;
+  transition: transform 0.18s ease;
+}
+
+.waypoint-card-meta:hover {
+  color: $brand-dark;
+}
+
+.waypoint-card-meta:hover::after {
+  transform: translateX(4px);
 }
 
 .closing-section {
@@ -723,6 +771,10 @@ onBeforeUnmount(() => {
   .waypoint-canvas {
     inset: 0;
     opacity: 0.28;
+  }
+
+  .waypoint-illustration {
+    display: none;
   }
 
   .waypoint-card.is-step-1,
