@@ -458,3 +458,686 @@ function formatActivityTime(activity) {
   </aside>
 </template>
 
+
+<style lang="scss">
+.mobile-menu-toggle,
+.mobile-menu-close {
+  display: none;
+}
+
+.stats-card {
+  position: fixed;
+  top: 18px;
+  left: 18px;
+  z-index: 20;
+  width: min(320px, calc(100vw - 36px));
+  max-height: calc(100dvh - 36px);
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 18px 45px rgba(31, 41, 51, 0.2);
+  backdrop-filter: blur(14px) saturate(145%);
+  -webkit-backdrop-filter: blur(14px) saturate(145%);
+}
+
+.stats-card-content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-height: calc(100dvh - 36px);
+  padding: 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: #aab1b8 transparent;
+}
+
+.stats-card-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.stats-card-content::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(127, 140, 153, 0.48);
+  background-clip: content-box;
+}
+
+.stats-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid rgba(127, 140, 153, 0.35);
+  padding-bottom: 14px;
+}
+
+.stats-card-header h1::after {
+  display: block;
+  width: 64px;
+  height: 3px;
+  margin-top: 7px;
+  border-radius: 999px;
+  background: $brand;
+  content: "";
+}
+
+.stats-card-header p {
+  margin: 9px 0 0;
+  color: $slate-soft;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  color: $slate-soft;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.muted,
+.empty-state {
+  margin: 0;
+  color: #5f6f7c;
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.strava-button {
+  width: 100%;
+  padding: 11px 14px;
+  background: $strava;
+  color: #ffffff;
+  font-weight: 800;
+}
+
+.disconnect-button {
+  width: auto;
+  margin-top: 8px;
+  padding: 0;
+  background: transparent;
+  color: $slate-soft;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.stats-panel {
+  margin-bottom: 14px;
+  border-bottom: 1px solid rgba(127, 140, 153, 0.35);
+  background: transparent;
+}
+
+.photo-settings {
+  margin-bottom: 14px;
+  border-bottom: 1px solid rgba(127, 140, 153, 0.35);
+  padding-bottom: 14px;
+}
+
+.photo-settings-title {
+  margin: 0 0 10px;
+  color: $ink;
+  font-size: 0.76rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.photo-format-control {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 12px;
+  color: $ink;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.photo-format-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.photo-format-button {
+  display: grid;
+  min-height: 42px;
+  place-items: center;
+  border: 1px solid rgba(127, 140, 153, 0.28);
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: rgba(255, 255, 255, 0.96);
+  color: $ink;
+  font-size: 0.78rem;
+  font-weight: 850;
+  line-height: 1.15;
+}
+
+.photo-format-button small {
+  color: $slate-soft;
+  font-size: 0.64rem;
+  font-weight: 750;
+}
+
+.photo-format-button.is-selected {
+  background: $ink;
+  color: #ffffff;
+}
+
+.photo-format-button.is-selected small {
+  color: rgba(255, 255, 255, 0.74);
+}
+
+.photo-toggle {
+  display: flex;
+  min-height: 26px;
+  align-items: center;
+  gap: 9px;
+  color: $ink;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.photo-toggle input {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  accent-color: $ink;
+}
+
+.photo-stat-lines {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 8px;
+  margin-top: 10px;
+}
+
+.photo-text-field {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  color: $ink;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.photo-text-field input {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid rgba(127, 140, 153, 0.28);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: #ffffff;
+  color: $ink;
+  font: inherit;
+  font-weight: 650;
+}
+
+.photo-text-count {
+  margin: 5px 0 0;
+  color: $slate-soft;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: right;
+}
+
+.photo-custom-stats {
+  display: grid;
+  gap: 7px;
+  margin-top: 10px;
+  color: $ink;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.photo-custom-stat-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
+}
+
+.photo-custom-stat-row input {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(127, 140, 153, 0.28);
+  border-radius: 6px;
+  padding: 7px 8px;
+  background: #ffffff;
+  color: $ink;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.photo-placement {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.photo-placement span {
+  color: $ink;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.photo-placement-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 18px);
+  gap: 8px;
+}
+
+.photo-placement-button {
+  width: 18px;
+  height: 18px;
+  border: 1px solid rgba(252, 76, 2, 0.68);
+  border-radius: 3px;
+  background: rgba(255, 221, 132, 0.68);
+}
+
+.photo-placement-button.is-selected {
+  background: $strava;
+  box-shadow:
+    0 0 0 2px #ffffff,
+    0 0 0 4px rgba(252, 76, 2, 0.38);
+}
+
+.source-import-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid rgba(127, 140, 153, 0.35);
+  padding-bottom: 14px;
+}
+
+.source-import-title {
+  margin: 0;
+  color: $ink;
+  font-size: 0.76rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.strava-account {
+  margin-top: 2px;
+}
+
+.strava-date-import {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid rgba(127, 140, 153, 0.22);
+  padding-top: 10px;
+}
+
+.strava-date-title {
+  margin: 0;
+  color: $ink;
+  font-size: 0.76rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.strava-date-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+}
+
+.strava-date-search input {
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid rgba(127, 140, 153, 0.28);
+  border-radius: 6px;
+  padding: 7px 8px;
+  background: #ffffff;
+  color: $ink;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.strava-date-search button,
+.strava-date-results-header button {
+  min-height: 36px;
+  padding: 7px 9px;
+  background: $ink;
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.strava-date-results {
+  display: grid;
+  gap: 7px;
+}
+
+.strava-date-results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: $slate-soft;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.strava-date-results-header button {
+  min-height: 28px;
+  border: 1px solid $border-soft;
+  background: rgba(255, 255, 255, 0.9);
+  color: $ink;
+  font-size: 0.72rem;
+}
+
+.strava-date-activity {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  border: 1px solid rgba(127, 140, 153, 0.18);
+  border-radius: 6px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  color: $ink;
+}
+
+.strava-date-activity.is-disabled {
+  opacity: 0.5;
+}
+
+.strava-date-activity input {
+  margin-top: 2px;
+  accent-color: $ink;
+}
+
+.strava-date-activity strong,
+.strava-date-activity small {
+  display: block;
+  min-width: 0;
+}
+
+.strava-date-activity strong {
+  overflow: hidden;
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.strava-date-activity small {
+  margin-top: 3px;
+  color: $slate-soft;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.strava-date-import-button {
+  width: 100%;
+  min-height: 36px;
+  background: $brand;
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 850;
+}
+
+.gpx-import-button {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid $border-soft;
+  background: rgba(255, 255, 255, 0.9);
+  color: $ink;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.account-status {
+  margin: 0;
+  color: $slate;
+  font-size: 0.86rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.stats-panel h2 {
+  margin: 0;
+  padding: 10px 0 4px;
+  background: transparent;
+  color: $ink-deep;
+  font-size: 0.95rem;
+  line-height: 1.2;
+}
+
+.stats-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 18px;
+  padding: 8px 0 4px;
+}
+
+.stats-metric {
+  min-width: 0;
+}
+
+.stats-metric strong,
+.stats-metric span {
+  display: block;
+}
+
+.stats-metric strong {
+  overflow-wrap: anywhere;
+  color: $ink-deep;
+  font-size: 1.16rem;
+  font-weight: 850;
+  line-height: 1.05;
+}
+
+.stats-metric span {
+  margin-top: 5px;
+  color: $slate-soft;
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+@media (max-width: 760px) {
+  .mobile-menu-toggle {
+    position: fixed;
+    top: max(10px, env(safe-area-inset-top));
+    left: max(10px, env(safe-area-inset-left));
+    z-index: 30;
+    display: grid;
+    width: 46px;
+    height: 46px;
+    place-items: center;
+    border: 1px solid rgba(255, 255, 255, 0.62);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.94);
+    color: $ink;
+    box-shadow: 0 12px 30px rgba(31, 41, 51, 0.2);
+    backdrop-filter: blur(12px) saturate(145%);
+    -webkit-backdrop-filter: blur(12px) saturate(145%);
+  }
+
+  .mobile-menu-toggle.is-hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-6px);
+  }
+
+  .stats-card {
+    top: max(10px, env(safe-area-inset-top));
+    right: max(10px, env(safe-area-inset-right));
+    left: max(10px, env(safe-area-inset-left));
+    width: auto;
+    max-height: min(62dvh, 520px);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-8px);
+    transition:
+      opacity 0.18s ease,
+      transform 0.18s ease,
+      visibility 0.18s ease;
+    visibility: hidden;
+  }
+
+  .app-layout.is-capture-mode .stats-card,
+  .app-layout.is-capture-mode .stats-card-content {
+    max-height: calc(100dvh - 20px);
+  }
+
+  .stats-card.is-mobile-open {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+    visibility: visible;
+  }
+
+  .stats-card-content {
+    max-height: min(62dvh, 520px);
+    padding: 12px;
+  }
+
+  .stats-card-header {
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+  }
+
+  .mobile-menu-close {
+    display: grid;
+    width: 38px;
+    height: 38px;
+    flex: 0 0 auto;
+    place-items: center;
+    background: #ffffff;
+    color: $ink;
+  }
+
+  .eyebrow {
+    font-size: 0.68rem;
+  }
+
+  h1 {
+    font-size: 1.36rem;
+  }
+
+  .muted,
+  .empty-state {
+    font-size: 0.82rem;
+  }
+
+  .stats-panel {
+    margin-bottom: 10px;
+  }
+
+  .photo-settings {
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+  }
+
+  .photo-settings-title {
+    margin-bottom: 8px;
+    font-size: 0.8rem;
+  }
+
+  .photo-format-control {
+    margin-bottom: 10px;
+    font-size: 0.78rem;
+  }
+
+  .photo-format-button {
+    min-height: 38px;
+    padding: 5px 6px;
+    font-size: 0.74rem;
+  }
+
+  .photo-format-button small {
+    font-size: 0.58rem;
+  }
+
+  .photo-toggle {
+    min-height: 24px;
+    font-size: 0.78rem;
+  }
+
+  .photo-text-field {
+    margin-top: 8px;
+    font-size: 0.78rem;
+  }
+
+  .photo-custom-stats {
+    margin-top: 8px;
+    font-size: 0.78rem;
+  }
+
+  .photo-custom-stat-row input {
+    min-height: 32px;
+    font-size: 0.74rem;
+  }
+
+  .stats-panel h2 {
+    padding: 8px 0;
+    font-size: 0.86rem;
+  }
+
+  .stats-metrics {
+    gap: 12px 14px;
+    padding-top: 6px;
+  }
+
+  .stats-metric strong {
+    font-size: 1rem;
+  }
+
+  .stats-metric span {
+    font-size: 0.62rem;
+  }
+
+  .account-status {
+    font-size: 0.8rem;
+  }
+
+  .strava-button,
+  .disconnect-button {
+    min-height: 38px;
+    padding: 8px 10px;
+    font-size: 0.84rem;
+  }
+
+  .disconnect-button {
+    min-height: 0;
+    padding: 0;
+    font-size: 0.76rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .stats-card {
+    max-height: min(68dvh, 540px);
+  }
+
+  .stats-card-content {
+    max-height: min(68dvh, 540px);
+  }
+}
+
+@media (max-width: 760px) and (max-height: 640px) {
+  .stats-card,
+  .stats-card-content {
+    max-height: calc(100dvh - 20px);
+  }
+}
+</style>

@@ -95,3 +95,54 @@ const page = computed(() => pages[props.pageId] || pages['mentions-legales']);
     </div>
   </main>
 </template>
+
+<style lang="scss">
+.legal-shell {
+  padding: 44px 0;
+}
+
+.legal-back {
+  display: inline-flex;
+  margin-bottom: 18px;
+  color: $slate;
+  font-size: 0.84rem;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.legal-card {
+  max-width: 820px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 8px;
+  padding: 28px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 18px 44px rgba(31, 41, 51, 0.12);
+}
+
+.legal-card h1 {
+  margin: 0 0 22px;
+  color: $ink-deep;
+  font-size: clamp(2rem, 4vw, 3.4rem);
+  line-height: 1;
+}
+
+.legal-card section + section {
+  border-top: 1px solid rgba(127, 140, 153, 0.22);
+  margin-top: 18px;
+  padding-top: 18px;
+}
+
+.legal-card h2 {
+  margin: 0;
+  color: $ink;
+  font-size: 1rem;
+}
+
+.legal-card p {
+  margin: 8px 0 0;
+  color: $slate;
+  font-weight: 650;
+  line-height: 1.55;
+}
+</style>

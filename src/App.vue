@@ -299,3 +299,143 @@ onBeforeUnmount(() => {
     </div>
   </main>
 </template>
+
+<style lang="scss">
+.app-layout {
+  position: relative;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.workspace {
+  position: relative;
+  min-width: 0;
+  background: #dbe4ea;
+  height: 100%;
+}
+
+.status-panel {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 30;
+  display: flex;
+  width: min(340px, calc(100% - 36px));
+  flex-direction: column;
+  gap: 10px;
+}
+
+.strava-import-choice {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(10, 16, 24, 0.62);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.strava-import-choice-card {
+  width: min(430px, 100%);
+  border: 1px solid rgba(255, 255, 255, 0.66);
+  border-radius: 8px;
+  padding: 22px;
+  background: rgba(255, 255, 255, 0.96);
+  color: $ink;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+}
+
+.strava-import-choice-card h2 {
+  margin: 0;
+  color: $ink-deep;
+  font-size: 1.4rem;
+  line-height: 1.12;
+}
+
+.strava-import-choice-card > p:not(.home-eyebrow) {
+  margin: 12px 0 0;
+  color: $slate;
+  font-size: 0.92rem;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.strava-import-choice-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.choice-primary,
+.choice-secondary {
+  min-height: 42px;
+  padding: 10px 12px;
+  font-size: 0.86rem;
+  font-weight: 850;
+}
+
+.choice-primary {
+  background: $brand;
+  color: #ffffff;
+  box-shadow: 0 14px 34px rgba(252, 76, 2, 0.22);
+}
+
+.choice-secondary {
+  border: 1px solid $border-soft;
+  background: #ffffff;
+  color: $ink;
+}
+
+.status-message {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 8px;
+  padding: 10px 10px 10px 13px;
+  background: #ffffff;
+  color: #22313d;
+  box-shadow: 0 12px 28px rgba(31, 41, 51, 0.16);
+}
+
+.status-message.success {
+  border-left: 5px solid #2a9d8f;
+}
+
+.status-message.error {
+  border-left: 5px solid #d62828;
+}
+
+.status-message.info {
+  border-left: 5px solid #0077b6;
+}
+
+.status-message button {
+  width: 28px;
+  height: 28px;
+  background: #e8eef3;
+  color: #23303b;
+  font-weight: 800;
+}
+
+@media (max-width: 760px) {
+  .status-panel {
+    right: max(10px, env(safe-area-inset-right));
+    bottom: max(10px, env(safe-area-inset-bottom));
+    left: max(10px, env(safe-area-inset-left));
+    width: auto;
+  }
+
+  .status-message {
+    padding: 9px 9px 9px 12px;
+    font-size: 0.82rem;
+  }
+
+  .strava-import-choice-actions {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
