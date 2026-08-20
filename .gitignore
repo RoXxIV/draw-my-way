@@ -8,3 +8,4 @@ vite-dev*.log
 vite-share-test*.log
 Vos trajets.json
 *.md
+!README.md

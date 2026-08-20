@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import RouteStylePanel from './RouteStylePanel.vue';
 import { CAPTURE_FORMATS, CAPTURE_STATS_POSITIONS } from '../config/capture';
+import { ROUTE_COLORS } from '../config/colors';
 import { getAllTimeStatsRows, STATS_ROW_OPTIONS } from '../services/activityStats';
 
 const CUSTOM_TEXT_MAX_LENGTH = 70;
@@ -109,6 +110,7 @@ const importBreakdown = computed(() => props.activities
       `${Math.round(Number(activity.stats.elevationGainMeters || 0)).toLocaleString('fr-FR')} m D+`,
     ].join(' · '),
   })));
+const badgeAccentColor = computed(() => props.captureSettings.accentColor || '#d62828');
 const displayedPanel = computed(() => activePanel.value);
 const isPanelOpen = computed(() => displayedPanel.value !== '');
 const panelTitle = computed(() => ({
@@ -550,6 +552,23 @@ function formatActivityTime(activity) {
                 />
                 <span>{{ row.label }}</span>
               </label>
+            </div>
+
+            <div class="badge-accent">
+              <span>Couleur d'accent</span>
+              <div class="import-row-colors" role="group" aria-label="Couleur d'accent du badge">
+                <button
+                  v-for="color in ROUTE_COLORS"
+                  :key="color"
+                  class="color-swatch"
+                  :class="{ 'is-selected': color === badgeAccentColor }"
+                  type="button"
+                  :style="{ backgroundColor: color }"
+                  :disabled="!isOverlayEnabled"
+                  :aria-label="`Choisir ${color}`"
+                  @click="updateCaptureSettings({ accentColor: color })"
+                ></button>
+              </div>
             </div>
           </details>
 
@@ -1073,6 +1092,18 @@ function formatActivityTime(activity) {
   color: $slate-soft;
   font-size: 0.7rem;
   font-weight: 700;
+}
+
+.badge-accent {
+  display: grid;
+  gap: 2px;
+  margin-top: 10px;
+}
+
+.badge-accent > span {
+  color: $ink;
+  font-size: 0.82rem;
+  font-weight: 750;
 }
 
 .disconnect-hint {

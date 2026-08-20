@@ -135,6 +135,7 @@ const captureResolutionLabel = computed(() => {
 
   return `${Math.round(customFrame.value.width * pixelRatio)} × ${Math.round(customFrame.value.height * pixelRatio)} px`;
 });
+const badgeAccentColor = computed(() => props.captureSettings.accentColor || props.routeColor);
 const isStatsOverlayEnabled = computed(() => props.captureSettings.showOverlay !== false);
 const shouldShowCaptureStatsPreview = computed(() => (
   isStatsOverlayEnabled.value && (captureStatLines.value.length > 0 || Boolean(captureCustomText.value))
@@ -285,16 +286,6 @@ watch(
   () => {
     customFrame.value = null;
   },
-);
-
-watch(
-  [() => props.captureStatsPosition, () => props.captureSettings],
-  () => {
-    if (snapshotBaseUrl.value) {
-      renderSnapshotFromBase();
-    }
-  },
-  { deep: true },
 );
 
 function syncRoutes() {
@@ -665,14 +656,14 @@ function drawStatsBadge(context, width, height, cssToCanvasScale = 1) {
   context.fillText('DrawMyWay', x + padding, cursorY);
 
   cursorY += brandToAccentGap;
-  context.fillStyle = props.routeColor;
+  context.fillStyle = badgeAccentColor.value;
   drawRoundRect(context, x + padding, cursorY, Math.round(38 * scale), accentHeight, Math.round(2 * scale));
   context.fill();
   cursorY += accentHeight + afterAccentGap;
 
   if (customText) {
     cursorY += headlineFontSize;
-    context.fillStyle = props.routeColor;
+    context.fillStyle = badgeAccentColor.value;
     context.font = `850 ${headlineFontSize}px Inter, Arial, sans-serif`;
     context.fillText(truncateText(context, customText, panelWidth - padding * 2), x + padding, cursorY);
     cursorY += customToStatsGap + detailFontSize;
@@ -879,7 +870,7 @@ function stopFrameResize() {
       v-if="!isCaptureMode && shouldShowCaptureStatsPreview"
       class="capture-stats-preview map-stats-overlay"
       :class="`is-${captureStatsPosition}`"
-      :style="{ '--capture-accent-color': routeColor }"
+      :style="{ '--capture-accent-color': badgeAccentColor }"
       aria-hidden="true"
     >
       <p class="capture-stats-brand">DrawMyWay</p>
@@ -924,7 +915,7 @@ function stopFrameResize() {
           v-if="shouldShowCaptureStatsPreview"
           class="capture-stats-preview"
           :class="`is-${captureStatsPosition}`"
-          :style="{ '--capture-accent-color': routeColor }"
+          :style="{ '--capture-accent-color': badgeAccentColor }"
           aria-hidden="true"
         >
           <p class="capture-stats-brand">DrawMyWay</p>
@@ -1248,7 +1239,6 @@ function stopFrameResize() {
 }
 
 .capture-stats-brand,
-.capture-stats-source,
 .capture-stats-text {
   margin: 0;
 }
@@ -1270,13 +1260,6 @@ function stopFrameResize() {
   border-radius: 999px;
   background: var(--capture-accent-color);
   content: "";
-}
-
-.capture-stats-source {
-  margin-top: 8px;
-  color: #344451;
-  font-size: 0.82rem;
-  font-weight: 750;
 }
 
 .capture-stats-text {
@@ -1420,10 +1403,6 @@ function stopFrameResize() {
     font-size: 0.78rem;
   }
 
-  .capture-stats-source {
-    margin-top: 6px;
-  }
-
   .capture-stats-text {
     margin-top: 6px;
   }
@@ -1433,7 +1412,6 @@ function stopFrameResize() {
     margin-top: 8px;
   }
 
-  .capture-stats-source,
   .capture-stats-text,
   .capture-stats-list p {
     font-size: 0.55rem;

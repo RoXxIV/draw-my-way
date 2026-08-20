@@ -20,6 +20,7 @@ const DEFAULT_ROUTE_OPACITY = 0.95;
 const DEFAULT_CAPTURE_SETTINGS = {
   format: DEFAULT_CAPTURE_FORMAT,
   showOverlay: true,
+  accentColor: DEFAULT_ROUTE_COLOR,
   customText: '',
   customStats: [
     { value: '', label: '' },

@@ -1,7 +1,12 @@
 const MIN_POINTS_PER_LINE = 2;
 const EARTH_RADIUS_METERS = 6371000;
+const MAX_GPX_FILE_BYTES = 30 * 1024 * 1024;
 
 export async function parseGpxFile(file) {
+  if (file.size > MAX_GPX_FILE_BYTES) {
+    throw new Error('Fichier GPX trop volumineux (30 Mo maximum).');
+  }
+
   const text = await file.text();
   const document = new DOMParser().parseFromString(text, 'application/xml');
   const parseError = document.querySelector('parsererror');

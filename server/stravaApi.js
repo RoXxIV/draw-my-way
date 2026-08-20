@@ -126,7 +126,7 @@ export function configureStravaApi(server, env) {
 
   server.middlewares.use('/api/strava/activities-by-date', async (req, res) => {
     if (req.method !== 'GET') {
-      sendJson(res, 405, { error: 'MÃ©thode non autorisÃ©e.' });
+      sendJson(res, 405, { error: 'Méthode non autorisée.' });
       return;
     }
 
@@ -146,7 +146,7 @@ export function configureStravaApi(server, env) {
 
   server.middlewares.use('/api/strava/import-selected', async (req, res) => {
     if (req.method !== 'POST') {
-      sendJson(res, 405, { error: 'MÃ©thode non autorisÃ©e.' });
+      sendJson(res, 405, { error: 'Méthode non autorisée.' });
       return;
     }
 
@@ -156,7 +156,7 @@ export function configureStravaApi(server, env) {
       const activityIds = Array.isArray(body.activityIds) ? body.activityIds.map(String) : [];
 
       if (activityIds.length === 0) {
-        const error = new Error('SÃ©lectionne au moins une activitÃ© Strava.');
+        const error = new Error('Sélectionne au moins une activité Strava.');
         error.status = 422;
         throw error;
       }
@@ -169,20 +169,20 @@ export function configureStravaApi(server, env) {
       const selectedActivities = activities.filter((activity) => activityIds.includes(String(activity.id)));
 
       if (selectedActivities.length === 0) {
-        const error = new Error('Aucune activitÃ© sÃ©lectionnÃ©e trouvÃ©e sur cette date.');
+        const error = new Error('Aucune activité sélectionnée trouvée sur cette date.');
         error.status = 422;
         throw error;
       }
 
       sendJson(res, 200, buildAggregateActivity(selectedActivities, {
         id: `strava-selection-${activityIds.sort().join('-')}`,
-        name: 'Strava - sÃ©lection',
+        name: 'Strava - sélection',
         type: 'strava_selection',
-        fileName: 'SÃ©lection Strava',
+        fileName: 'Sélection Strava',
       }));
     } catch (error) {
       sendJson(res, error.status || 500, {
-        error: error.message || 'Import de la sÃ©lection Strava impossible.',
+        error: error.message || 'Import de la sélection Strava impossible.',
       });
     }
   });
@@ -475,7 +475,7 @@ function readActivityRange(searchParams) {
 function toActivityListItem(activity) {
   return {
     id: String(activity.id),
-    name: activity.name || 'ActivitÃ© Strava',
+    name: activity.name || 'Activité Strava',
     type: activity.type || activity.sport_type || '',
     sportType: activity.sport_type || activity.type || '',
     startDate: activity.start_date || '',
@@ -495,7 +495,7 @@ function readJsonBody(req) {
       body += chunk;
 
       if (body.length > 100000) {
-        reject(Object.assign(new Error('RequÃªte trop volumineuse.'), { status: 413 }));
+        reject(Object.assign(new Error('Requête trop volumineuse.'), { status: 413 }));
       }
     });
 

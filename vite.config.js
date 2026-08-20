@@ -19,6 +19,16 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            maplibre: ['maplibre-gl'],
+            gsap: ['gsap'],
+          },
+        },
+      },
+    },
     plugins: [
       vue(),
       {

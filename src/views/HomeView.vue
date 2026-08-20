@@ -730,8 +730,6 @@ onBeforeUnmount(() => {
 
 @media (max-width: 760px) {
   .home-hero {
-    grid-template-columns: 1fr;
-    gap: 22px;
     padding: 36px 0 30px;
   }
 
