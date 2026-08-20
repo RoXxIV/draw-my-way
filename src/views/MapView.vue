@@ -62,6 +62,35 @@ const FRAME_HANDLES = ['nw', 'ne', 'sw', 'se'];
 const FRAME_MARGIN = 8;
 const FRAME_BOTTOM_MARGIN = 88;
 
+class RecenterControl {
+  constructor(onClick) {
+    this.onClick = onClick;
+  }
+
+  onAdd() {
+    this.container = document.createElement('div');
+    this.container.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'recenter-control';
+    button.title = 'Recentrer sur mes tracés';
+    button.setAttribute('aria-label', 'Recentrer sur mes tracés');
+    button.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+      <path d="M4 9V6a2 2 0 0 1 2-2h3M15 4h3a2 2 0 0 1 2 2v3M20 15v3a2 2 0 0 1-2 2h-3M9 20H6a2 2 0 0 1-2-2v-3"/>
+      <circle cx="12" cy="12" r="2.4" fill="currentColor" stroke="none"/>
+    </svg>`;
+    button.addEventListener('click', this.onClick);
+    this.container.appendChild(button);
+
+    return this.container;
+  }
+
+  onRemove() {
+    this.container.remove();
+  }
+}
+
 // En dessous de 360px le badge de stats déborde du cadre.
 function getFrameMinSize(overlayWidth, overlayHeight) {
   const available = Math.min(
@@ -169,6 +198,7 @@ function createMap() {
   });
 
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+  map.addControl(new RecenterControl(fitToRoutes), 'top-right');
 
   map.on('load', () => {
     mapLoaded.value = true;
@@ -590,14 +620,12 @@ function applyCameraMode() {
   });
 }
 
-function fitToRoutesIfNeeded() {
+function fitToRoutes() {
   const data = visibleFeatureCollection.value;
 
-  if (!map || !mapLoaded.value || data.features.length === 0 || data.features.length === lastFitFeatureCount) {
+  if (!map || !mapLoaded.value || data.features.length === 0) {
     return;
   }
-
-  lastFitFeatureCount = data.features.length;
 
   const bounds = bbox(data);
 
@@ -611,11 +639,22 @@ function fitToRoutesIfNeeded() {
       [bounds[2], bounds[3]],
     ],
     {
-      padding: 80,
+      padding: { top: 80, right: 80, bottom: 110, left: 80 },
       duration: 700,
       maxZoom: 14,
     },
   );
+}
+
+function fitToRoutesIfNeeded() {
+  const featureCount = visibleFeatureCollection.value.features.length;
+
+  if (featureCount === 0 || featureCount === lastFitFeatureCount) {
+    return;
+  }
+
+  lastFitFeatureCount = featureCount;
+  fitToRoutes();
 }
 
 async function captureMapImage() {
@@ -1129,6 +1168,14 @@ function stopFrameResize() {
   to {
     transform: rotate(360deg);
   }
+}
+
+.maplibregl-ctrl button.recenter-control svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+  margin: auto;
+  color: #333333;
 }
 
 .map-init-error {
