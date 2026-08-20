@@ -1,12 +1,13 @@
-import { ref } from 'vue';
+import { ref, toRaw } from 'vue';
 import {
   clearActivities as clearStoredActivities,
   getActivities,
+  removeActivity,
   upsertActivity,
 } from '../services/activityStorage';
 import {
   disconnectStrava,
-  fetchStravaAggregateActivity,
+  fetchStravaSportAggregates,
   fetchSelectedStravaActivities,
   fetchStravaActivitiesByDate,
   getStravaStatus,
@@ -87,22 +88,50 @@ export function useActivities() {
     isImporting.value = true;
 
     try {
-      // The API returns one aggregate activity to avoid hundreds of MapLibre layers.
-      const activity = withVisibleFlag(await fetchStravaAggregateActivity());
-      await upsertActivity(activity);
-      activities.value = [activity, ...activities.value.filter((item) => item.id !== activity.id)];
-      const activityCount = activity.stats?.activityCount || activity.sourceActivityCount;
+      // The API returns one aggregate per sport family to keep MapLibre light while allowing per-sport styling.
+      const aggregates = (await fetchStravaSportAggregates()).map(withVisibleFlag);
+      const staleIds = activities.value
+        .filter((item) => item.type === 'strava_summary' && !aggregates.some((aggregate) => aggregate.id === item.id))
+        .map((item) => item.id);
+
+      await Promise.all(staleIds.map((id) => removeActivity(id)));
+      await Promise.all(aggregates.map((aggregate) => upsertActivity(aggregate)));
+      activities.value = [
+        ...aggregates,
+        ...activities.value.filter((item) => item.type !== 'strava_summary'),
+      ];
+
+      const totalCount = aggregates.reduce((total, aggregate) => total + Number(aggregate.stats?.activityCount || 0), 0);
+      const totalPoints = aggregates.reduce((total, aggregate) => total + Number(aggregate.pointCount || 0), 0);
       setMessage(
-        `Import Strava terminé : ${activityCount} activité(s), ${activity.pointCount.toLocaleString('fr-FR')} points carto allégés.`,
+        `Import Strava terminé : ${totalCount} activité(s) réparties sur ${aggregates.length} sport(s), ${totalPoints.toLocaleString('fr-FR')} points carto allégés.`,
         'success',
       );
       await refreshStravaStatus();
-      return activity;
+      return aggregates;
     } catch (error) {
       setMessage(error.message, 'error');
       return null;
     } finally {
       isImporting.value = false;
+    }
+  }
+
+  async function updateActivityAppearance(id, partial) {
+    const current = activities.value.find((item) => item.id === id);
+
+    if (!current) {
+      return;
+    }
+
+    // toRaw : IndexedDB ne peut pas cloner un proxy réactif Vue (DataCloneError).
+    const updated = { ...toRaw(current), ...partial };
+    activities.value = activities.value.map((item) => (item.id === id ? updated : item));
+
+    try {
+      await upsertActivity(updated);
+    } catch (error) {
+      setMessage(`Impossible d'enregistrer le style du tracé : ${error.message}`, 'error');
     }
   }
 
@@ -232,6 +261,7 @@ export function useActivities() {
     searchStravaActivitiesByDate,
     stravaStatus,
     stravaDateSearch,
+    updateActivityAppearance,
   };
 }
 

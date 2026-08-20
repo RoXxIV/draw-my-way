@@ -31,6 +31,11 @@ export async function upsertActivity(activity) {
   return activity;
 }
 
+export async function removeActivity(id) {
+  const db = await dbPromise;
+  await db.delete(STORE_NAME, id);
+}
+
 export async function clearActivities() {
   const db = await dbPromise;
   await db.clear(STORE_NAME);

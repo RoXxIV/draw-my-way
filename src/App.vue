@@ -53,6 +53,7 @@ const {
   stravaStatus,
   stravaDateSearch,
   refreshStravaStatus,
+  updateActivityAppearance,
 } = useActivities();
 
 const routeColor = ref(localStorage.getItem(ROUTE_COLOR_STORAGE_KEY) || DEFAULT_ROUTE_COLOR);
@@ -72,11 +73,6 @@ const activeLegalPage = computed(() => {
 
   return legalPageIds.has(pageId) ? pageId : '';
 });
-
-function updateRouteColor(color) {
-  routeColor.value = color;
-  localStorage.setItem(ROUTE_COLOR_STORAGE_KEY, color);
-}
 
 function updateRouteRenderMode(mode) {
   routeRenderMode.value = mode;
@@ -113,6 +109,10 @@ async function chooseFullImport() {
 async function handleDisconnectStrava() {
   isImportChoiceOpen.value = false;
   await disconnectStravaAccount();
+}
+
+function handleUpdateActivityAppearance({ id, ...partial }) {
+  updateActivityAppearance(id, partial);
 }
 
 function updateMapStyle(styleId) {
@@ -241,15 +241,15 @@ onBeforeUnmount(() => {
       @connect-strava="connectStrava"
       @disconnect-strava="handleDisconnectStrava"
       @import-gpx="importGpxFile"
-      @import-strava-all="importStravaActivities"
       @import-strava-date-selection="importStravaDateSelection"
+      @open-strava-import="isImportChoiceOpen = true"
       @search-strava-date="searchStravaActivitiesByDate"
       @toggle-capture-mode="toggleCaptureMode"
       @toggle-footprint-mode="toggleFootprintMode"
+      @update-activity-appearance="handleUpdateActivityAppearance"
       @update-capture-settings="updateCaptureSettings"
       @update-capture-stats-position="updateCaptureStatsPosition"
       @update-map-style="updateMapStyle"
-      @update-route-color="updateRouteColor"
       @update-route-opacity="updateRouteOpacity"
       @update-route-render-mode="updateRouteRenderMode"
     />

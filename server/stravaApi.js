@@ -115,9 +115,8 @@ export function configureStravaApi(server, env) {
 
       const accessToken = await refreshAccessToken(env, refreshToken);
       const activities = await fetchAllActivities(accessToken);
-      const aggregate = buildAggregateActivity(activities);
 
-      sendJson(res, 200, aggregate);
+      sendJson(res, 200, buildSportAggregates(activities));
     } catch (error) {
       sendJson(res, error.status || 500, {
         error: error.message || 'Import Strava impossible.',
@@ -318,6 +317,74 @@ async function fetchAllActivities(accessToken, options = {}) {
   return activities;
 }
 
+const SPORT_FAMILY_LABELS = {
+  ride: 'Vélo',
+  run: 'Course',
+  walk: 'Marche & rando',
+  swim: 'Natation',
+  other: 'Autres sports',
+};
+
+const SPORT_FAMILY_BY_TYPE = {
+  Ride: 'ride',
+  VirtualRide: 'ride',
+  EBikeRide: 'ride',
+  EMountainBikeRide: 'ride',
+  GravelRide: 'ride',
+  MountainBikeRide: 'ride',
+  Handcycle: 'ride',
+  Velomobile: 'ride',
+  Run: 'run',
+  TrailRun: 'run',
+  VirtualRun: 'run',
+  Walk: 'walk',
+  Hike: 'walk',
+  Snowshoe: 'walk',
+  Swim: 'swim',
+};
+
+function getSportFamily(activity) {
+  return SPORT_FAMILY_BY_TYPE[activity.sport_type || activity.type] || 'other';
+}
+
+function buildSportAggregates(activities) {
+  const groups = new Map();
+
+  for (const activity of activities) {
+    const family = getSportFamily(activity);
+
+    if (!groups.has(family)) {
+      groups.set(family, []);
+    }
+
+    groups.get(family).push(activity);
+  }
+
+  const aggregates = [];
+
+  for (const [family, familyActivities] of groups) {
+    try {
+      aggregates.push(buildAggregateActivity(familyActivities, {
+        id: `strava-summary-${family}-v1`,
+        name: `Strava – ${SPORT_FAMILY_LABELS[family]}`,
+        type: 'strava_summary',
+        fileName: 'API Strava',
+        sportFamily: family,
+      }));
+    } catch {
+      // Famille sans tracé exploitable (ex : natation en piscine) — ignorée.
+    }
+  }
+
+  if (aggregates.length === 0) {
+    const error = new Error('Aucune activité Strava avec tracé exploitable.');
+    error.status = 422;
+    throw error;
+  }
+
+  return aggregates;
+}
+
 function buildAggregateActivity(activities, options = {}) {
   const lines = [];
   let sourceActivities = 0;
@@ -373,6 +440,7 @@ function buildAggregateActivity(activities, options = {}) {
     type: options.type || 'strava_summary',
     startTime: latestStartTime,
     fileName: options.fileName || 'API Strava',
+    sportFamily: options.sportFamily || '',
     pointCount,
     sourceActivityCount: sourceActivities,
     stats,

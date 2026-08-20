@@ -30,7 +30,7 @@ export async function disconnectStrava() {
   return payload;
 }
 
-export async function fetchStravaAggregateActivity() {
+export async function fetchStravaSportAggregates() {
   const response = await fetch('/api/strava/import', {
     method: 'POST',
   });
@@ -41,7 +41,7 @@ export async function fetchStravaAggregateActivity() {
     throw new Error(payload.error || 'Import Strava impossible.');
   }
 
-  return payload;
+  return Array.isArray(payload) ? payload : [payload];
 }
 
 export async function fetchStravaActivitiesByDate(date) {

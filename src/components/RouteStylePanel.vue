@@ -1,10 +1,11 @@
 <script setup>
 import { MAP_STYLES } from '../config/map';
+import { ROUTE_COLORS } from '../config/colors';
 
 defineProps({
-  modelValue: {
-    type: String,
-    required: true,
+  imports: {
+    type: Array,
+    default: () => [],
   },
   isFootprintMode: {
     type: Boolean,
@@ -26,13 +27,13 @@ defineProps({
 
 const emit = defineEmits([
   'toggle-footprint-mode',
+  'update-activity-appearance',
   'update-map-style',
   'update-route-opacity',
   'update-route-render-mode',
-  'update:modelValue',
 ]);
 
-const colors = ['#d62828', '#ff4f00', '#0077b6', '#2a9d8f', '#6d597a', '#2b9348', '#111827'];
+const colors = ROUTE_COLORS;
 const routeRenderModes = [
   { id: 'solid', label: 'Normal' },
   { id: 'heat', label: 'Chaleur' },
@@ -49,19 +50,6 @@ function getMapPreviewStyle(style) {
   <div class="style-panel">
     <details class="style-section" open>
       <summary>Tracés</summary>
-      <div class="color-swatches">
-        <button
-          v-for="color in colors"
-          :key="color"
-          class="color-swatch"
-          :class="{ 'is-selected': color === modelValue }"
-          type="button"
-          :style="{ backgroundColor: color }"
-          :aria-label="`Choisir ${color}`"
-          @click="emit('update:modelValue', color)"
-        ></button>
-      </div>
-
       <div class="route-mode-options">
         <button
           v-for="mode in routeRenderModes"
@@ -87,6 +75,43 @@ function getMapPreviewStyle(style) {
           @input="emit('update-route-opacity', Number($event.target.value))"
         />
       </label>
+    </details>
+
+    <details v-if="imports.length > 0" class="style-section" open>
+      <summary>Tracés par import</summary>
+      <div class="import-styles">
+        <article v-for="item in imports" :key="item.id" class="import-style-row">
+          <label class="import-row-head">
+            <input
+              type="checkbox"
+              :checked="item.visible"
+              :title="item.visible ? 'Masquer sur la carte' : 'Afficher sur la carte'"
+              @change="emit('update-activity-appearance', { id: item.id, visible: !item.visible })"
+            />
+            <strong>{{ item.name }}</strong>
+          </label>
+          <div class="import-row-colors" role="group" aria-label="Couleur du tracé">
+            <button
+              class="color-swatch is-auto"
+              :class="{ 'is-selected': !item.color }"
+              type="button"
+              title="Suivre la couleur globale"
+              aria-label="Suivre la couleur globale"
+              @click="emit('update-activity-appearance', { id: item.id, color: '' })"
+            ></button>
+            <button
+              v-for="color in colors"
+              :key="color"
+              class="color-swatch"
+              :class="{ 'is-selected': color === item.color }"
+              type="button"
+              :style="{ backgroundColor: color }"
+              :aria-label="`Choisir ${color}`"
+              @click="emit('update-activity-appearance', { id: item.id, color })"
+            ></button>
+          </div>
+        </article>
+      </div>
     </details>
 
     <details class="style-section">
@@ -166,12 +191,6 @@ function getMapPreviewStyle(style) {
 
 .style-section > :not(summary) {
   margin-top: 10px;
-}
-
-.color-swatches {
-  display: grid;
-  grid-template-columns: repeat(7, 22px);
-  gap: 6px;
 }
 
 .route-mode-options {
@@ -280,6 +299,57 @@ function getMapPreviewStyle(style) {
   box-shadow:
     0 0 0 2px $ink,
     0 0 0 4px rgba(255, 255, 255, 0.92);
+}
+
+.import-styles {
+  display: grid;
+  gap: 10px;
+}
+
+.import-style-row {
+  border: 1px solid rgba(127, 140, 153, 0.18);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.import-row-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  cursor: pointer;
+}
+
+.import-row-head input {
+  accent-color: $ink;
+}
+
+.import-row-head strong {
+  overflow: hidden;
+  color: $ink;
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-row-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.import-row-colors .color-swatch {
+  width: 16px;
+  height: 16px;
+}
+
+.color-swatch.is-auto {
+  background:
+    linear-gradient(135deg, transparent 42%, rgba(127, 140, 153, 0.85) 42% 58%, transparent 58%),
+    #ffffff;
 }
 
 @media (max-width: 380px) {

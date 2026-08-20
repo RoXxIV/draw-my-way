@@ -73,17 +73,17 @@ const props = defineProps({
 const emit = defineEmits([
   'clear-activities',
   'connect-strava',
+  'update-activity-appearance',
   'disconnect-strava',
   'import-gpx',
-  'import-strava-all',
   'import-strava-date-selection',
+  'open-strava-import',
   'search-strava-date',
   'toggle-footprint-mode',
   'toggle-capture-mode',
   'update-capture-settings',
   'update-capture-stats-position',
   'update-map-style',
-  'update-route-color',
   'update-route-opacity',
   'update-route-render-mode',
 ]);
@@ -101,6 +101,8 @@ const importBreakdown = computed(() => props.activities
   .map((activity) => ({
     id: activity.id,
     name: activity.name || activity.fileName || 'Import',
+    visible: activity.visible !== false,
+    color: activity.color || '',
     detail: [
       `${Number(activity.stats.activityCount || 0).toLocaleString('fr-FR')} activité(s)`,
       `${(Number(activity.stats.distanceMeters || 0) / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 1, minimumFractionDigits: 1 })} km`,
@@ -393,9 +395,9 @@ function formatActivityTime(activity) {
             class="strava-button"
             type="button"
             :disabled="isImporting"
-            @click="emit('import-strava-all')"
+            @click="emit('open-strava-import')"
           >
-            {{ isImporting ? 'Import...' : 'Tout importer' }}
+            {{ isImporting ? 'Import...' : 'Importer depuis Strava' }}
           </button>
           <button
             class="gpx-import-button"
@@ -513,7 +515,7 @@ function formatActivityTime(activity) {
             </div>
           </details>
 
-          <details v-if="importBreakdown.length > 1" class="style-section">
+          <details v-if="importBreakdown.length > 0" class="style-section">
             <summary>Par import</summary>
             <div class="import-breakdown">
               <article
@@ -619,14 +621,14 @@ function formatActivityTime(activity) {
 
       <RouteStylePanel
         v-else-if="displayedPanel === 'style'"
+        :imports="importBreakdown"
         :is-footprint-mode="isFootprintMode"
         :map-style-id="mapStyleId"
-        :model-value="routeColor"
         :route-opacity="routeOpacity"
         :route-render-mode="routeRenderMode"
         @toggle-footprint-mode="emit('toggle-footprint-mode')"
+        @update-activity-appearance="emit('update-activity-appearance', $event)"
         @update-map-style="emit('update-map-style', $event)"
-        @update:model-value="emit('update-route-color', $event)"
         @update-route-opacity="emit('update-route-opacity', $event)"
         @update-route-render-mode="emit('update-route-render-mode', $event)"
       />
@@ -674,8 +676,6 @@ function formatActivityTime(activity) {
   align-items: center;
   gap: 10px;
   max-width: calc(100vw - 24px);
-  overflow-x: auto;
-  scrollbar-width: none;
   transform: translateX(-50%);
 }
 
@@ -1230,7 +1230,11 @@ function formatActivityTime(activity) {
   }
 
   .map-bottom-bar {
-    bottom: max(10px, env(safe-area-inset-bottom));
+    bottom: max(0px, calc(env(safe-area-inset-bottom) - 6px));
+    max-width: 100vw;
+    padding: 16px;
+    overflow-x: auto;
+    scrollbar-width: none;
   }
 
   .map-format-chip {

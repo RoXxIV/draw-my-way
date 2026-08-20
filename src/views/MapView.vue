@@ -55,6 +55,22 @@ const captureFrame = ref(null);
 const mapLoaded = ref(false);
 const isStyleLoading = ref(false);
 const isImportOverlayVisible = ref(false);
+const mapInitError = ref('');
+const customFrame = ref(null);
+let frameResizeState = null;
+const FRAME_HANDLES = ['nw', 'ne', 'sw', 'se'];
+const FRAME_MARGIN = 8;
+const FRAME_BOTTOM_MARGIN = 88;
+
+// En dessous de 360px le badge de stats déborde du cadre.
+function getFrameMinSize(overlayWidth, overlayHeight) {
+  const available = Math.min(
+    overlayWidth - FRAME_MARGIN * 2,
+    overlayHeight - FRAME_MARGIN - FRAME_BOTTOM_MARGIN,
+  );
+
+  return Math.min(window.matchMedia('(max-width: 760px)').matches ? 220 : 360, available);
+}
 const isCapturing = ref(false);
 const snapshotBaseUrl = ref('');
 const snapshotUrl = ref('');
@@ -76,7 +92,7 @@ const visibleFeatureCollection = computed(() => ({
       properties: {
         id: activity.id,
         name: activity.name,
-        color: props.routeColor,
+        color: activity.color || props.routeColor,
       },
       geometry: activity.geometry,
     })),
@@ -94,12 +110,45 @@ const captureStatLines = computed(() => [
   ...getCompactStatLines(capturePreviewRows.value),
   ...captureCustomStatLines.value,
 ]);
+const customFrameStyle = computed(() => {
+  if (!customFrame.value) {
+    return null;
+  }
+
+  return {
+    top: `${customFrame.value.top}px`,
+    left: `${customFrame.value.left}px`,
+    width: `${customFrame.value.width}px`,
+    height: `${customFrame.value.height}px`,
+    right: 'auto',
+    bottom: 'auto',
+    aspectRatio: 'auto',
+    transform: 'none',
+  };
+});
+const captureResolutionLabel = computed(() => {
+  if (!customFrame.value) {
+    return activeCaptureFormat.value.resolution;
+  }
+
+  const pixelRatio = window.devicePixelRatio || 1;
+
+  return `${Math.round(customFrame.value.width * pixelRatio)} × ${Math.round(customFrame.value.height * pixelRatio)} px`;
+});
 const isStatsOverlayEnabled = computed(() => props.captureSettings.showOverlay !== false);
 const shouldShowCaptureStatsPreview = computed(() => (
   isStatsOverlayEnabled.value && (captureStatLines.value.length > 0 || Boolean(captureCustomText.value))
 ));
 
 onMounted(() => {
+  try {
+    createMap();
+  } catch {
+    mapInitError.value = 'Impossible d’initialiser la carte (WebGL indisponible). Ferme puis rouvre complètement ton navigateur, ou vérifie que l’accélération matérielle est activée.';
+  }
+});
+
+function createMap() {
   map = new maplibregl.Map({
     container: mapContainer.value,
     style: getMapStyleUrl(props.mapStyleId),
@@ -122,9 +171,10 @@ onMounted(() => {
     syncRoutes();
     fitToRoutesIfNeeded();
   });
-});
+}
 
 onBeforeUnmount(() => {
+  window.removeEventListener('pointermove', onFrameResizeMove);
   map?.remove();
 });
 
@@ -225,7 +275,15 @@ watch(
       snapshotBaseUrl.value = '';
       snapshotUrl.value = '';
       snapshotError.value = '';
+      customFrame.value = null;
     }
+  },
+);
+
+watch(
+  () => props.captureSettings.format,
+  () => {
+    customFrame.value = null;
   },
 );
 
@@ -731,6 +789,87 @@ function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
+function reloadPage() {
+  window.location.reload();
+}
+
+function startFrameResize(handle, event) {
+  const overlay = captureFrame.value?.parentElement;
+
+  if (!overlay) {
+    return;
+  }
+
+  const overlayRect = overlay.getBoundingClientRect();
+  const rect = captureFrame.value.getBoundingClientRect();
+  const start = {
+    left: rect.left - overlayRect.left,
+    top: rect.top - overlayRect.top,
+    width: rect.width,
+    height: rect.height,
+  };
+
+  customFrame.value = { ...start };
+  frameResizeState = {
+    handle,
+    start,
+    startX: event.clientX,
+    startY: event.clientY,
+    ratio: ['square', 'story', 'poster'].includes(activeCaptureFormat.value.id) ? rect.width / rect.height : 0,
+    overlayWidth: overlayRect.width,
+    overlayHeight: overlayRect.height,
+    minSize: getFrameMinSize(overlayRect.width, overlayRect.height),
+  };
+  window.addEventListener('pointermove', onFrameResizeMove);
+  window.addEventListener('pointerup', stopFrameResize, { once: true });
+}
+
+function onFrameResizeMove(event) {
+  if (!frameResizeState) {
+    return;
+  }
+
+  const { handle, start, startX, startY, ratio, overlayWidth, overlayHeight, minSize } = frameResizeState;
+  const deltaX = event.clientX - startX;
+  const deltaY = event.clientY - startY;
+  const growsLeft = handle.includes('w');
+  const growsTop = handle.includes('n');
+  let width = growsLeft ? start.width - deltaX : start.width + deltaX;
+  let height = growsTop ? start.height - deltaY : start.height + deltaY;
+
+  if (ratio) {
+    if (Math.abs(deltaX) >= Math.abs(deltaY)) {
+      height = width / ratio;
+    } else {
+      width = height * ratio;
+    }
+  }
+
+  width = Math.max(width, minSize);
+  height = Math.max(height, ratio ? width / ratio : minSize);
+  width = Math.min(width, overlayWidth - FRAME_MARGIN * 2);
+
+  if (ratio) {
+    height = width / ratio;
+  }
+
+  height = Math.min(height, overlayHeight - FRAME_MARGIN - FRAME_BOTTOM_MARGIN);
+
+  if (ratio) {
+    width = height * ratio;
+  }
+
+  const left = clamp(growsLeft ? start.left + start.width - width : start.left, FRAME_MARGIN, Math.max(overlayWidth - FRAME_MARGIN - width, FRAME_MARGIN));
+  const top = clamp(growsTop ? start.top + start.height - height : start.top, FRAME_MARGIN, Math.max(overlayHeight - FRAME_BOTTOM_MARGIN - height, FRAME_MARGIN));
+
+  customFrame.value = { left, top, width, height };
+}
+
+function stopFrameResize() {
+  frameResizeState = null;
+  window.removeEventListener('pointermove', onFrameResizeMove);
+}
+
 </script>
 
 <template>
@@ -750,7 +889,19 @@ function clamp(value, min, max) {
       </div>
     </div>
     <div v-if="isCaptureMode" class="capture-overlay">
-      <div ref="captureFrame" class="capture-frame" :class="`is-${activeCaptureFormat.id}`">
+      <div
+        ref="captureFrame"
+        class="capture-frame"
+        :class="`is-${activeCaptureFormat.id}`"
+        :style="customFrameStyle"
+      >
+        <span
+          v-for="handle in FRAME_HANDLES"
+          :key="handle"
+          class="capture-handle"
+          :class="`is-${handle}`"
+          @pointerdown.prevent="startFrameResize(handle, $event)"
+        ></span>
         <button
           class="capture-close"
           type="button"
@@ -768,7 +919,7 @@ function clamp(value, min, max) {
             />
           </svg>
         </button>
-        <span class="capture-resolution">{{ activeCaptureFormat.resolution }}</span>
+        <span class="capture-resolution">{{ captureResolutionLabel }}</span>
         <div
           v-if="shouldShowCaptureStatsPreview"
           class="capture-stats-preview"
@@ -817,6 +968,10 @@ function clamp(value, min, max) {
       <span class="map-loading-spinner"></span>
       <span>{{ isImportOverlayVisible ? 'Import des traces…' : 'Chargement du fond' }}</span>
     </div>
+    <div v-if="mapInitError" class="map-init-error" role="alert">
+      <p>{{ mapInitError }}</p>
+      <button type="button" @click="reloadPage">Recharger la page</button>
+    </div>
   </section>
 </template>
 
@@ -856,6 +1011,38 @@ function clamp(value, min, max) {
   to {
     transform: rotate(360deg);
   }
+}
+
+.map-init-error {
+  position: absolute;
+  inset: 0;
+  z-index: 19;
+  display: grid;
+  place-content: center;
+  gap: 14px;
+  padding: 24px;
+  background: #dbe4ea;
+  text-align: center;
+}
+
+.map-init-error p {
+  max-width: 420px;
+  margin: 0;
+  color: $slate;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.map-init-error button {
+  justify-self: center;
+  min-height: 40px;
+  border-radius: 8px;
+  padding: 10px 16px;
+  background: $ink;
+  color: #ffffff;
+  font-size: 0.85rem;
+  font-weight: 850;
 }
 
 .capture-overlay {
@@ -901,6 +1088,43 @@ function clamp(value, min, max) {
 .capture-frame.is-poster {
   height: calc(100dvh - 170px);
   aspect-ratio: 4 / 5;
+}
+
+.capture-handle {
+  position: absolute;
+  z-index: 4;
+  width: 16px;
+  height: 16px;
+  border: 2px solid $ink;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.capture-handle.is-nw {
+  top: -8px;
+  left: -8px;
+  cursor: nwse-resize;
+}
+
+.capture-handle.is-ne {
+  top: -8px;
+  right: -8px;
+  cursor: nesw-resize;
+}
+
+.capture-handle.is-sw {
+  bottom: -8px;
+  left: -8px;
+  cursor: nesw-resize;
+}
+
+.capture-handle.is-se {
+  bottom: -8px;
+  right: -8px;
+  cursor: nwse-resize;
 }
 
 .capture-resolution {
