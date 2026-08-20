@@ -78,7 +78,12 @@ const snapshotError = ref('');
 let map = null;
 let lastFitFeatureCount = 0;
 let snapshotRenderVersion = 0;
+let hasPlayedIntro = false;
+let introActive = false;
+let introFrameId = 0;
 const ACTIVITY_SOURCE_ID = 'activities';
+const INTRO_LAYER_ID = 'activity-lines-intro';
+const INTRO_DURATION_MS = 3200;
 const ROUTE_LINE_WIDTH_BY_ZOOM = ['interpolate', ['linear'], ['zoom'], 5, 1, 9, 1.8, 13, 2.5];
 const HEAT_BASE_LINE_WIDTH_BY_ZOOM = ['interpolate', ['linear'], ['zoom'], 5, 2, 9, 3.2, 13, 4.5];
 const HEAT_CORE_LINE_WIDTH_BY_ZOOM = ROUTE_LINE_WIDTH_BY_ZOOM;
@@ -176,6 +181,8 @@ function createMap() {
 
 onBeforeUnmount(() => {
   window.removeEventListener('pointermove', onFrameResizeMove);
+  cancelAnimationFrame(introFrameId);
+  introActive = false;
   map?.remove();
 });
 
@@ -300,18 +307,21 @@ function syncRoutes() {
     source.setData(data);
     ensureRouteLayers();
     applyRouteRenderMode();
+    maybePlayIntro();
     return;
   }
 
   map.addSource(ACTIVITY_SOURCE_ID, {
     type: 'geojson',
     data,
+    lineMetrics: true,
   });
 
   // All activities are rendered through one GeoJSON source/layer to keep MapLibre responsive.
   ensureRouteLayers();
   applyRouteRenderMode();
   applyRoutePaint();
+  maybePlayIntro();
 }
 
 function ensureRouteLayers() {
@@ -377,8 +387,14 @@ function applyRouteRenderMode() {
   applyRoutePaint();
 }
 
-function applyRoutePaint() {
-  const opacity = clamp(props.routeOpacity, 0, 1);
+function applyRoutePaint(introFactor) {
+  // Pendant l'intro, seules les frames de l'animation pilotent l'opacité des calques finaux.
+  if (introActive && introFactor === undefined) {
+    return;
+  }
+
+  const scale = introFactor === undefined ? 1 : introFactor;
+  const opacity = clamp(props.routeOpacity, 0, 1) * scale;
 
   if (map.getLayer('activity-lines')) {
     map.setPaintProperty('activity-lines', 'line-opacity', opacity);
@@ -391,6 +407,117 @@ function applyRoutePaint() {
   if (map.getLayer('activity-lines-heat-core')) {
     map.setPaintProperty('activity-lines-heat-core', 'line-opacity', opacity * 0.16);
   }
+}
+
+function maybePlayIntro() {
+  if (hasPlayedIntro || !map || !mapLoaded.value) {
+    return;
+  }
+
+  const features = visibleFeatureCollection.value.features;
+
+  if (features.length === 0) {
+    return;
+  }
+
+  hasPlayedIntro = true;
+
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    return;
+  }
+
+  introActive = true;
+
+  const uniqueColors = [...new Set(features.map((feature) => feature.properties.color))];
+  const inkColor = uniqueColors.length === 1 ? uniqueColors[0] : props.routeColor;
+  const targetOpacity = clamp(props.routeOpacity, 0, 1);
+
+  applyRoutePaint(0);
+
+  if (!map.getLayer(INTRO_LAYER_ID)) {
+    map.addLayer({
+      id: INTRO_LAYER_ID,
+      type: 'line',
+      source: ACTIVITY_SOURCE_ID,
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-width': ROUTE_LINE_WIDTH_BY_ZOOM,
+        'line-opacity': targetOpacity,
+        'line-gradient': buildIntroGradient(inkColor, 0.001),
+      },
+    });
+  }
+
+  // Démarre le dessin seulement quand la carte est stabilisée (tuiles chargées,
+  // recadrage terminé, voile d'import retiré) : sinon l'animation joue « dans le noir ».
+  let started = false;
+
+  const begin = () => {
+    if (started || !introActive) {
+      return;
+    }
+
+    started = true;
+    runIntroFrames(inkColor, targetOpacity);
+  };
+
+  map.once('idle', begin);
+  window.setTimeout(begin, 4000);
+}
+
+function runIntroFrames(inkColor, targetOpacity) {
+  const start = performance.now();
+
+  const frame = (now) => {
+    if (!map || !map.getLayer(INTRO_LAYER_ID)) {
+      introActive = false;
+      return;
+    }
+
+    const t = Math.min((now - start) / INTRO_DURATION_MS, 1);
+    // Le dessin occupe les 3/4 du temps (easeOutCubic), le fondu vers les couleurs finales la fin.
+    const draw = 1 - (1 - Math.min(t / 0.75, 1)) ** 3;
+    const fade = clamp((t - 0.7) / 0.3, 0, 1);
+
+    map.setPaintProperty(INTRO_LAYER_ID, 'line-gradient', buildIntroGradient(inkColor, Math.max(draw, 0.001)));
+    map.setPaintProperty(INTRO_LAYER_ID, 'line-opacity', targetOpacity * (1 - fade));
+    applyRoutePaint(fade);
+
+    if (t < 1) {
+      introFrameId = requestAnimationFrame(frame);
+    } else {
+      finishIntro();
+    }
+  };
+
+  introFrameId = requestAnimationFrame(frame);
+}
+
+function buildIntroGradient(color, head) {
+  const tail = Math.max(head - 0.08, 0);
+
+  return [
+    'interpolate',
+    ['linear'],
+    ['line-progress'],
+    tail,
+    color,
+    Math.max(head, tail + 0.001),
+    'rgba(255, 255, 255, 0)',
+  ];
+}
+
+function finishIntro() {
+  introActive = false;
+
+  if (map?.getLayer(INTRO_LAYER_ID)) {
+    map.removeLayer(INTRO_LAYER_ID);
+  }
+
+  applyRoutePaint();
 }
 
 function setLayerVisibility(layerId, visibility) {
